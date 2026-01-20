@@ -36,7 +36,7 @@ RealCredit 是一个由 [Yuqiu] 设计开发的现代化个人记账与财务管
 
 ```bash
 # 克隆或下载本项目
-git clone https://github.com/your-repo/RealCredit.git
+git clone https://github.com/Lophetz/RealCredit.git
 cd RealCredit
 
 # 安装依赖
