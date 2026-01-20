@@ -192,7 +192,7 @@ def get_expenses(start_date: Optional[date] = None, end_date: Optional[date] = N
 def update_expense(expense_id: int, item: ExpenseCreate, db: Session = Depends(get_db)):
     existing = db.query(models.ExpenseItem).filter(models.ExpenseItem.id == expense_id).first()
     if not existing:
-        raise HTTPException(status_code=404, detail="Item not found")
+        raise HTTPException(status_code=404, detail="未找到记录")
     
     updated_items = []
     
@@ -341,7 +341,7 @@ def update_expense(expense_id: int, item: ExpenseCreate, db: Session = Depends(g
 def delete_expense(expense_id: int, delete_series: bool = False, db: Session = Depends(get_db)):
     item = db.query(models.ExpenseItem).filter(models.ExpenseItem.id == expense_id).first()
     if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
+        raise HTTPException(status_code=404, detail="未找到记录")
     
     if delete_series and item.group_id:
         # Delete all items in the group
@@ -352,14 +352,14 @@ def delete_expense(expense_id: int, delete_series: bool = False, db: Session = D
         
     db.commit()
 
-    return {"message": "Success"}
+    return {"message": "成功"}
 
 @app.delete("/expenses")
 def delete_all_expenses(db: Session = Depends(get_db)):
     """Delete all expenses - for debugging purposes"""
     db.query(models.ExpenseItem).delete()
     db.commit()
-    return {"message": "All expenses deleted"}
+    return {"message": "所有支出已删除"}
 
 @app.post("/expenses/bulk_replace", response_model=List[ExpenseOut])
 def bulk_replace_expenses(items: List[ExpenseOut], db: Session = Depends(get_db)):
@@ -410,7 +410,7 @@ def create_category(category: CategoryCreate, db: Session = Depends(get_db)):
     # Check if exists
     existing = db.query(models.Category).filter(models.Category.name == category.name).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Category already exists")
+        raise HTTPException(status_code=400, detail="分类已存在")
         
     db_cat = models.Category(name=category.name, icon=category.icon)
     db.add(db_cat)
@@ -422,7 +422,7 @@ def create_category(category: CategoryCreate, db: Session = Depends(get_db)):
 def delete_category(cat_id: int, db: Session = Depends(get_db)):
     db_cat = db.query(models.Category).filter(models.Category.id == cat_id).first()
     if not db_cat:
-        raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(status_code=404, detail="未找到分类")
     
     # Optional: Check if used? For now, just delete.
     # If we delete a category that expenses use, they might show just the name or fallback.
@@ -431,7 +431,7 @@ def delete_category(cat_id: int, db: Session = Depends(get_db)):
     
     db.delete(db_cat)
     db.commit()
-    return {"message": "Category deleted"}
+    return {"message": "分类已删除"}
 
     db.delete(db_cat)
     db.commit()
@@ -494,7 +494,7 @@ def get_rules(db: Session = Depends(get_db)):
 def create_rule(rule: RuleCreate, db: Session = Depends(get_db)):
     existing = db.query(models.CategoryRule).filter(models.CategoryRule.keyword == rule.keyword).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Rule for this keyword already exists")
+        raise HTTPException(status_code=400, detail="该关键词规则已存在")
     new_rule = models.CategoryRule(keyword=rule.keyword, category=rule.category)
     db.add(new_rule)
     db.commit()
@@ -505,7 +505,7 @@ def create_rule(rule: RuleCreate, db: Session = Depends(get_db)):
 def delete_rule(rule_id: int, db: Session = Depends(get_db)):
     db.query(models.CategoryRule).filter(models.CategoryRule.id == rule_id).delete()
     db.commit()
-    return {"message": "Deleted"}
+    return {"message": "已删除"}
 
 import pandas as pd
 import io
@@ -547,7 +547,7 @@ async def import_wechat(file: UploadFile = File(...), db: Session = Depends(get_
         
         # 4. 批量入库
         if not transactions:
-            return {"message": "No valid transactions found to import."}
+            return {"message": "未找到有效的可导入交易。"}
 
         new_expenses = []
         for item in transactions:
@@ -569,11 +569,11 @@ async def import_wechat(file: UploadFile = File(...), db: Session = Depends(get_
         db.bulk_save_objects(new_expenses)
         db.commit()
         
-        return {"message": f"Successfully imported {len(transactions)} transactions from WeChat"}
+        return {"message": f"成功从微信导入 {len(transactions)} 条交易"}
             
     except Exception as e:
         print(f"Import Error: {e}")
-        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
         
     finally:
         # 清理垃圾文件
@@ -610,7 +610,7 @@ async def import_alipay(file: UploadFile = File(...), db: Session = Depends(get_
                 )
                 db.add(new_expense)
             db.commit()
-            return {"message": f"Successfully imported {len(transactions)} from Alipay"}
+            return {"message": f"成功从支付宝导入 {len(transactions)} 条交易"}
             
         finally:
             if os.path.exists(tmp_path):
@@ -618,7 +618,7 @@ async def import_alipay(file: UploadFile = File(...), db: Session = Depends(get_
 
     except Exception as e:
         print(f"Alipay Import Error: {e}")
-        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
 
 
 app.mount("/", StaticFiles(directory=".", html=True), name="static")

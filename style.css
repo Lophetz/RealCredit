@@ -1,3 +1,4 @@
+/* Base Theme (Dark Default) */
 :root {
     --bg-color: #0f0f0f;
     --board-bg: #1a1a1a;
@@ -11,6 +12,12 @@
     --success: #10B981;
     --danger: #EF4444;
     --font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    
+    /* Additional Dark Default vars */
+    --input-bg: #1a1a1a;
+    --modal-bg: #252525;
+    --nav-btn-bg: #252525;
+    --nav-btn-hover: #2d2d2d;
 }
 
 [data-theme="light"] {
@@ -32,30 +39,42 @@
 }
 
 [data-theme="dark"] {
+    /* Explicit dark mode override if needed, but :root is default */
     --input-bg: #1a1a1a;
     --modal-bg: #252525;
     --nav-btn-bg: #252525;
     --nav-btn-hover: #2d2d2d;
 }
 
-/* Default to dark variables if no theme attribute (fallback) */
-:root {
-    --bg-color: #0f0f0f;
-    --board-bg: #1a1a1a;
-    --card-bg: #252525;
-    --card-hover: #2d2d2d;
-    --text-primary: #FFFFFF;
-    --text-secondary: #9CA3AF;
-    --accent: #3B82F6;
-    --accent-hover: #2563EB;
-    --border: #374151;
-    --success: #10B981;
-    --danger: #EF4444;
-    --font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --input-bg: #1a1a1a;
-    --modal-bg: #252525;
-    --nav-btn-bg: #252525;
-    --nav-btn-hover: #2d2d2d;
+/* Total Budget Progress Bar Styles */
+.total-budget-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    margin-left: 12px;
+    width: 120px;
+}
+
+.total-budget-bar-bg {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 2px;
+}
+
+.total-budget-fill {
+    height: 100%;
+    background: var(--success);
+    width: 0%;
+    transition: width 0.3s, background 0.3s;
+}
+
+.total-budget-text {
+    font-size: 10px;
+    color: var(--text-secondary);
+    text-align: right;
+    font-family: monospace;
 }
 
 

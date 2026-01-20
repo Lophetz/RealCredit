@@ -23,7 +23,7 @@ async function fetchBudget(dateObj) {
         }
 
     } catch (e) {
-        console.error("Fetch budget failed", e);
+        console.error("获取预算失败", e);
     }
 }
 
@@ -40,7 +40,7 @@ async function updateBudget() {
         monthBudget = amount;
         renderBoard(currentDate); // Re-render to show updated status
     } catch (e) {
-        console.error("Update budget failed", e);
+        console.error("更新预算失败", e);
     }
 }
 
@@ -54,7 +54,7 @@ async function init() {
         await fetchBudget(currentDate);
         renderBoard(currentDate);
     } catch (e) {
-        console.error("Initialization error (partial):", e);
+        console.error("初始化错误 (部分):", e);
         // Even if some fetches fail, we try to render what we can or at least leave UI responsive
     }
 }
@@ -64,11 +64,11 @@ async function fetchExpenses() {
         // Fetch wide range just in case. Optimization: fetch dynamic window.
         // For now, fetch all.
         const res = await fetch(`${API_URL}/expenses`);
-        if (!res.ok) throw new Error(`Failed to load expenses: ${res.statusText}`);
+        if (!res.ok) throw new Error(`加载支出失败: ${res.statusText}`);
         expenses = await res.json();
     } catch (e) {
-        console.error("Fetch expenses failed", e);
-        document.getElementById('board').innerHTML = `<div class="error-message">❌ Failed to load data. Is the backend running?<br>${e.message}</div>`;
+        console.error("获取支出失败", e);
+        document.getElementById('board').innerHTML = `<div class="error-message">❌ 加载数据失败。后端是否在运行？<br>${e.message}</div>`;
         throw e;
     }
 }
@@ -87,7 +87,7 @@ async function fetchCategories() {
 
         populateCategorySelect();
     } catch (e) {
-        console.error("Failed to fetch categories", e);
+        console.error("获取分类失败", e);
     }
 }
 
@@ -105,7 +105,7 @@ function populateCategorySelect() {
     // Add option to create new
     const newOpt = document.createElement('option');
     newOpt.value = '__NEW__';
-    newOpt.textContent = '➕ Add New Category...';
+    newOpt.textContent = '➕ 添加新分类...';
     select.appendChild(newOpt);
 
     select.onchange = (e) => {
@@ -116,7 +116,7 @@ function populateCategorySelect() {
             if (categoriesList.length > 0) select.value = categoriesList[0].name;
         } else {
             // Auto-detect type
-            const incomeKeywords = ['Salary', 'Business', 'Investment', 'Refund', 'Bonus', 'Income'];
+            const incomeKeywords = ['Salary', 'Business', 'Investment', 'Refund', 'Bonus', 'Income', '工资', '兼职', '投资', '理财', '退款', '奖金', '收入'];
             const isIncome = incomeKeywords.some(keyword => val.includes(keyword));
 
             if (isIncome) {
@@ -136,7 +136,7 @@ function getExpensesForDate(dateStr) {
 // Add Debug Button Listener
 document.addEventListener('DOMContentLoaded', () => {
     const debugBtn = document.createElement('button');
-    debugBtn.textContent = '🐞 Debug: Delete All';
+    debugBtn.textContent = '🐞 调试：全部删除';
     debugBtn.className = 'btn-delete';
     debugBtn.style.position = 'fixed';
     debugBtn.style.bottom = '20px';
@@ -237,13 +237,18 @@ function renderBoard(centerDate) {
             `;
         }
 
+        // Update Total Budget Progress (Once per render)
+        if (i === 0) {
+            updateTotalBudgetProgress(d.getFullYear(), d.getMonth() + 1);
+        }
+
         const col = document.createElement('div');
         col.className = 'column';
         if (dateStr === formatDate(new Date())) col.classList.add('current-day-col');
 
         const dateObj = new Date(dateStr);
-        const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-        const prettyDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const dayName = dateObj.toLocaleDateString('zh-CN', { weekday: 'short' });
+        const prettyDate = dateObj.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
 
         const items = getExpensesForDate(dateStr);
 
@@ -260,8 +265,8 @@ function renderBoard(centerDate) {
 
             if (item.is_amortized && item.original_amount) {
                 // Determine display labels based on unit
-                const unitLabel = item.unit === 'days' ? 'd' : 'mo';
-                const periodLabel = item.unit === 'days' ? 'Day' : 'Month';
+                const unitLabel = item.unit === 'days' ? '天' : '月';
+                const periodLabel = item.unit === 'days' ? '天' : '月';
                 const absTotal = Math.abs(item.original_amount);
 
                 amountHtml = `
@@ -284,12 +289,12 @@ function renderBoard(centerDate) {
                     <div class="card-footer">
                         <div class="card-tags">
                             <span class="tag">${item.category}</span>
-                            ${item.is_amortized ? '<span class="tag amortized">Amortized</span>' : ''}
-                            ${isIncome ? '<span class="tag income-tag">Income</span>' : ''}
+                            ${item.is_amortized ? '<span class="tag amortized">分摊</span>' : ''}
+                            ${isIncome ? '<span class="tag income-tag">收入</span>' : ''}
                         </div>
                         <div class="card-actions-compact">
-                            <button class="btn-icon" title="Edit" onclick="event.stopPropagation(); editExpense(${item.id})">✏️</button>
-                            <button class="btn-icon delete" title="Delete" onclick="event.stopPropagation(); deleteExpenseWrapper(${item.id}, ${item.is_amortized}, '${item.group_id || ''}')">🗑️</button>
+                            <button class="btn-icon" title="编辑" onclick="event.stopPropagation(); editExpense(${item.id})">✏️</button>
+                            <button class="btn-icon delete" title="删除" onclick="event.stopPropagation(); deleteExpenseWrapper(${item.id}, ${item.is_amortized}, '${item.group_id || ''}')">🗑️</button>
                         </div>
                     </div>
                 </div>
@@ -306,13 +311,41 @@ function renderBoard(centerDate) {
             <div class="column-content" id="col-${dateStr}">
                 ${itemsHtml}
                 <div class="add-placeholder" onclick="openModal('${dateStr}')">
-                    + Add Item
+                    + 添加记录
                 </div>
             </div>
         `;
 
         board.appendChild(col);
     }
+}
+
+function updateTotalBudgetProgress(year, month) {
+    const container = document.getElementById('total-budget-container');
+
+    if (monthBudget <= 0) {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'flex';
+
+    // Calculate total expenses for the month
+    const monthExpenses = getExpensesForMonth(year, month);
+    // Reuse existing aggregation logic
+    const { expenseTotal } = aggregateByCategory(monthExpenses);
+
+    const percent = Math.min((expenseTotal / monthBudget) * 100, 100);
+    const isOver = expenseTotal > monthBudget;
+    const color = isOver ? '#EF4444' : '#10B981';
+
+    const fill = document.getElementById('total-budget-fill');
+    fill.style.width = `${percent}%`;
+    fill.style.backgroundColor = color;
+
+    const text = document.getElementById('total-budget-text');
+    text.textContent = `¥${expenseTotal.toFixed(0)} / ¥${monthBudget.toFixed(0)} (${percent.toFixed(0)}%)`;
+    text.style.color = color;
 }
 
 function renderMonthlyBoard(centerDate) {
@@ -354,7 +387,7 @@ function renderMonthlyBoard(centerDate) {
             col.classList.add('current-day-col');
         }
 
-        const monthName = new Date(year, month - 1, 1).toLocaleDateString('en-US', { month: 'long' });
+        const monthName = new Date(year, month - 1, 1).toLocaleDateString('zh-CN', { month: 'long' });
 
         // Build category breakdown HTML
         let categoryHtml = '';
@@ -378,7 +411,7 @@ function renderMonthlyBoard(centerDate) {
             `;
             }).join('');
         } else {
-            categoryHtml = '<div class="category-item" style="border:none; justify-content:center; color:var(--text-secondary);">No transactions</div>';
+            categoryHtml = '<div class="category-item" style="border:none; justify-content:center; color:var(--text-secondary);">无交易</div>';
         }
 
         col.innerHTML = `
@@ -392,7 +425,7 @@ function renderMonthlyBoard(centerDate) {
                     ${expenseTotal > 0 ? `<div class="expense-total">-¥${expenseTotal.toFixed(2)}</div>` : ''}
                 </div>
                 <div class="month-total ${netTotal >= 0 ? 'positive' : 'negative'}">¥${netTotal.toFixed(2)}</div>
-                <div class="month-label">Net Total</div>
+                <div class="month-label">净总额</div>
             </div>
             <div class="category-breakdown">
                 ${categoryHtml}
@@ -415,7 +448,7 @@ function renderCalendarView(centerDate) {
     calendarContainer.className = 'calendar-view';
 
     // Calendar header
-    const monthName = new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const monthName = new Date(year, month, 1).toLocaleDateString('zh-CN', { month: 'long', year: 'numeric' });
     const header = document.createElement('div');
     header.className = 'calendar-header';
     header.innerHTML = `<h2>${monthName}</h2>`;
@@ -424,7 +457,7 @@ function renderCalendarView(centerDate) {
     // Weekday headers
     const weekdayHeaders = document.createElement('div');
     weekdayHeaders.className = 'calendar-weekdays';
-    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
     weekdays.forEach(day => {
         const dayHeader = document.createElement('div');
         dayHeader.className = 'weekday-header';
@@ -616,7 +649,7 @@ function setupEventListeners() {
 
             if (!res.ok) {
                 const err = await res.json();
-                alert(err.detail || 'Error creating category');
+                alert(err.detail || '创建分类失败');
                 return;
             }
 
@@ -633,7 +666,7 @@ function setupEventListeners() {
 
         } catch (err) {
             console.error(err);
-            alert('Failed to create category');
+            alert('创建分类错误');
         }
     };
 
@@ -758,7 +791,7 @@ async function createRule(keyword, category) {
 }
 
 async function deleteRule(id) {
-    if (!confirm('Delete rule?')) return;
+    if (!confirm('删除规则？')) return;
     await fetch(`${API_URL}/rules/${id}`, { method: 'DELETE' });
     fetchRules();
 }
@@ -770,12 +803,12 @@ async function uploadImportFile() {
     const status = document.getElementById('import-status');
 
     if (!file) {
-        status.textContent = 'Please select a file first.';
+        status.textContent = '请先选择文件。';
         status.style.color = '#EF4444';
         return;
     }
 
-    status.textContent = 'Uploading and processing...';
+    status.textContent = '正在上传处理...';
     status.style.color = '#FBBF24';
 
     const formData = new FormData();
@@ -791,7 +824,7 @@ async function uploadImportFile() {
 
         if (!res.ok) {
             const err = await res.json();
-            throw new Error(err.detail || 'Import failed');
+            throw new Error(err.detail || '导入失败');
         }
 
         const data = await res.json();
@@ -806,7 +839,7 @@ async function uploadImportFile() {
 
     } catch (e) {
         console.error(e);
-        status.textContent = `❌ Error: ${e.message}`;
+        status.textContent = `❌ 错误: ${e.message}`;
         status.style.color = '#EF4444';
     }
 }
@@ -822,7 +855,7 @@ async function createExpense(data) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
             });
-            if (!res.ok) alert('Error updating');
+            if (!res.ok) alert('更新错误');
         } else {
             // Create mode - POST request
             const res = await fetch(`${API_URL}/expenses`, {
@@ -830,7 +863,7 @@ async function createExpense(data) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
             });
-            if (!res.ok) alert('Error saving');
+            if (!res.ok) alert('保存错误');
         }
     } catch (e) {
         console.error(e);
@@ -843,7 +876,7 @@ async function editExpense(id) {
     if (!expense) return;
 
     // Populate modal with expense data
-    document.getElementById('modal-title').textContent = 'Edit Expense';
+    document.getElementById('modal-title').textContent = '编辑记录';
     document.getElementById('expense-id').value = id;
     document.getElementById('entry-date').value = expense.date;
     document.getElementById('desc').value = expense.description;
@@ -873,7 +906,7 @@ async function editExpense(id) {
 async function deleteExpenseWrapper(id, isAmortized, groupId) {
     if (isAmortized && groupId) {
         // Ask if user wants to delete series
-        const deleteSeries = confirm('This is part of an amortized series.\nClick OK to delete ALL related items.\nClick Cancel to delete ONLY this item.');
+        const deleteSeries = confirm('这是一条分摊记录。\n点击确定删除所有相关记录。\n点击取消仅删除此条记录。');
         const url = `${API_URL}/expenses/${id}?delete_series=${deleteSeries}`;
         await fetch(url, { method: 'DELETE' });
     } else {
@@ -885,7 +918,7 @@ async function deleteExpenseWrapper(id, isAmortized, groupId) {
 }
 
 async function debugDeleteAll() {
-    if (!confirm('⚠️ WARNING: This will delete ALL expenses and cannot be undone.\nAre you sure completely?')) return;
+    if (!confirm('⚠️ 警告：这将删除所有支出且无法撤销。\n您确定吗？')) return;
     try {
         const res = await fetch(`${API_URL}/expenses`, { method: 'DELETE' });
         const data = await res.json();
@@ -893,12 +926,12 @@ async function debugDeleteAll() {
         init();
     } catch (e) {
         console.error(e);
-        alert('Error deleting all');
+        alert('删除全部失败');
     }
 }
 
 window.openModal = function (dateStr) {
-    document.getElementById('modal-title').textContent = 'Add Expense';
+    document.getElementById('modal-title').textContent = '添加记录';
     document.getElementById('expense-id').value = '';
     document.getElementById('entry-date').value = dateStr;
     document.getElementById('desc').value = '';
@@ -975,19 +1008,19 @@ function renderCategoriesList() {
 }
 
 window.deleteCategory = async function (id, name) {
-    if (!confirm(`Delete category "${name}"?`)) return;
+    if (!confirm(`删除分类 "${name}"?`)) return;
 
     try {
         const res = await fetch(`${API_URL}/categories/${id}`, { method: 'DELETE' });
         if (!res.ok) {
-            alert('Error deleting category');
+            alert('删除分类错误');
             return;
         }
         await fetchCategories(); // Refresh global list
         renderCategoriesList(); // Refresh modal list
     } catch (e) {
         console.error(e);
-        alert('Failed to delete');
+        alert('删除失败');
     }
 }
 
@@ -1012,12 +1045,12 @@ async function openDevMode() {
 
     } catch (e) {
         console.error(e);
-        alert("Failed to load data for Dev Mode");
+        alert("加载开发者模式数据失败");
     }
 }
 
 async function saveDevMode() {
-    if (!confirm("⚠️ DANGER: This will OVERWRITE the entire database with the content of the editor.\n\nInvalid lines will be ignored, but ensure your JSON is valid.\n\nContinue?")) return;
+    if (!confirm("⚠️ 危险：这将用编辑器内容覆盖整个数据库。\n\n无效行将被忽略，但请确保 JSON 有效。\n\n继续吗？")) return;
 
     const editor = document.getElementById('jsonl-editor');
     const content = editor.value;
@@ -1035,12 +1068,12 @@ async function saveDevMode() {
             items.push(item);
         } catch (e) {
             errorCount++;
-            console.error("Invalid JSON line:", line);
+            console.error("无效 JSON 行:", line);
         }
     }
 
     if (errorCount > 0) {
-        if (!confirm(`Found ${errorCount} invalid JSON lines which will be SKIPPED.\nProceed with ${items.length} valid items?`)) return;
+        if (!confirm(`发现 ${errorCount} 行无效 JSON 将被跳过。\n继续处理 ${items.length} 条有效记录？`)) return;
     }
 
     // Send to backend
@@ -1053,11 +1086,11 @@ async function saveDevMode() {
 
         if (!res.ok) {
             const err = await res.json();
-            alert("Error saving data:\n" + (err.detail ? JSON.stringify(err.detail) : res.statusText));
+            alert("保存数据错误:\n" + (err.detail ? JSON.stringify(err.detail) : res.statusText));
             return;
         }
 
-        alert(`Success! Replaced DB with ${items.length} records.`);
+        alert(`成功！已用 ${items.length} 条记录替换数据库。`);
         document.getElementById('dev-modal').classList.add('hidden');
 
         // Reload everything
@@ -1065,7 +1098,7 @@ async function saveDevMode() {
 
     } catch (e) {
         console.error(e);
-        alert("Network or Server Error during save.");
+        alert("保存期间发生网络或服务器错误。");
     }
 }
 
