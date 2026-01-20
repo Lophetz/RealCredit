@@ -17,10 +17,10 @@ def startup_event():
     # Check if categories exist
     if db.query(models.Category).count() == 0:
         defaults = [
-            ("Food", "🍔"), ("Transport", "🚗"), ("Shopping", "🛍️"), 
-            ("Housing", "🏠"), ("Entertainment", "🎬"), ("Utilities", "💡"),
-            ("Salary", "💰"), ("Business", "💼"), ("Investment", "📈"), 
-            ("Other", "📦")
+            ("食物", "🍔"), ("交通", "🚗"), ("购物", "🛍️"), 
+            ("房屋", "🏠"), ("娱乐", "🎬"), ("水电费", "💡"),
+            ("工资", "💰"), ("商务", "💼"), ("投资", "📈"), 
+            ("其他", "📦")
         ]
         for name, icon in defaults:
             db.add(models.Category(name=name, icon=icon))

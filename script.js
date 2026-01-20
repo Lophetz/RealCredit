@@ -3,6 +3,14 @@ let currentDate = new Date();
 let expenses = [];
 let monthBudget = 0;
 let currentView = 'daily'; // 'daily', 'monthly', or 'calendar'
+let categoriesList = [];
+let categoryIcons = {};
+
+const emojiList = [
+    '🍔', '🚗', '🛍️', '🏠', '🎬', '💡', '💰', '💼', '📈', '📦',
+    '🐱', '🐶', '🍕', '🍺', '🎮', '✈️', '🏥', '📚', '🎁', '💅',
+    '🏋️', '🚕', '🥖', '🍎', '🍼', '🎓', '💸', '🏦', '🎨', '🎵'
+];
 
 async function fetchBudget(dateObj) {
     const monthStr = dateObj.toISOString().slice(0, 7); // YYYY-MM
