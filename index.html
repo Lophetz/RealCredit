@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RealCredit - Daily Log</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Dancing+Script:wght@600&display=swap" rel="stylesheet">
+</head>
+
+
+<body>
+    <div class="app-container">
+        <header class="top-bar">
+            <div class="logo-section">
+                <h1>RealCredit</h1>
+                <span class="user-signature">Yuqiu</span>
+                <div class="budget-widget" id="budget-widget" style="display:none;">
+                    <span class="budget-label">Month Budget:</span>
+                    <div class="budget-input-wrapper">
+                        <span class="currency-symbol">¥</span>
+                        <input type="number" id="month-budget-input" placeholder="0" onchange="updateBudget()">
+                    </div>
+                </div>
+            </div>
+
+            <div class="controls-group">
+                <button id="theme-toggle-btn" class="theme-mode-btn" title="Toggle Light/Dark Mode">☀️</button>
+                <div class="view-toggle">
+                    <button id="daily-view-btn" class="view-btn active">Daily</button>
+                    <button id="monthly-view-btn" class="view-btn">Monthly</button>
+                    <button id="calendar-view-btn" class="view-btn">Calendar</button>
+                </div>
+
+                <div class="nav-controls">
+                    <button id="import-btn-nav" class="nav-btn" title="Import WeChat Excel">📥 Import</button>
+                    <button id="dev-mode-btn" class="nav-btn dev-btn" title="Developer Mode / Data Editor">🔧
+                        Dev</button>
+                    <button id="prev-days" class="nav-btn"><span class="icon">←</span> Old</button>
+                    <button id="today-btn" class="nav-btn today">Today</button>
+                    <button id="next-days" class="nav-btn">New <span class="icon">→</span></button>
+                </div>
+            </div>
+        </header>
+
+        <main class="board-container" id="board">
+            <!-- Columns will be injected here via JS -->
+            <div class="loading">Loading board...</div>
+        </main>
+    </div>
+
+    <!-- Add/Edit Item Modal -->
+    <div id="item-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="modal-title">Add Expense</h2>
+            <form id="item-form">
+                <input type="hidden" id="entry-date">
+                <input type="hidden" id="expense-id">
+                <input type="hidden" id="type" value="expense">
+
+                <div class="form-group">
+                    <label>Type</label>
+                    <div class="type-selector">
+                        <div class="type-option active" data-type="expense" onclick="selectType('expense')">Expense
+                        </div>
+                        <div class="type-option" data-type="income" onclick="selectType('income')">Income</div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Description</label>
+                    <input type="text" id="desc" required placeholder="e.g. Lunch">
+                </div>
+
+                <div class="form-group">
+                    <label>Amount (CNY)</label>
+                    <input type="number" id="amount" step="0.01" required placeholder="0.00">
+                </div>
+
+                <div class="form-group">
+                    <label>Category</label>
+                    <select id="category">
+                        <option value="Food">🍔 Food</option>
+                        <option value="Transport">🚗 Transport</option>
+                        <option value="Shopping">🛍️ Shopping</option>
+                        <option value="Housing">🏠 Housing</option>
+                        <option value="Entertainment">🎬 Entertainment</option>
+                        <option value="Utilities">💡 Utilities</option>
+                        <option value="Salary">💰 Salary</option>
+                        <option value="Business">💼 Business</option>
+                        <option value="Investment">📈 Investment</option>
+                        <option value="Other">📦 Other</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Duration / Amortization</label>
+                    <div class="modal-row">
+                        <input type="number" id="months" value="1" min="1" placeholder="Duration">
+                        <select id="unit" onchange="toggleWeekendOption()">
+                            <option value="months">Months</option>
+                            <option value="days">Days</option>
+                        </select>
+                    </div>
+                    <div class="checkbox-group" id="weekend-option" style="display:none">
+                        <input type="checkbox" id="skip-weekends">
+                        <label for="skip-weekends">Skip Weekends (Workdays only)</label>
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" id="cancel-btn">Cancel</button>
+                    <button type="submit" class="btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Manage Categories Modal -->
+    <div id="category-modal" class="modal hidden">
+        <div class="modal-content category-modal-content">
+            <div class="category-modal-header">
+                <h2>Manage Categories</h2>
+                <button type="button" class="btn-icon-only" id="close-cat-btn">✕</button>
+            </div>
+
+            <div class="category-manager-layout">
+                <!-- Left: Add New -->
+                <div class="cat-create-section">
+                    <h3>Add New</h3>
+                    <form id="category-form">
+                        <div class="form-group">
+                            <label>Name</label>
+                            <input type="text" id="new-cat-name" required placeholder="e.g. Gym">
+                        </div>
+                        <div class="form-group">
+                            <label>Icon (Pick or Type)</label>
+                            <div class="emoji-input-row">
+                                <input type="text" id="new-cat-icon" required placeholder="💪" maxlength="2">
+                                <span class="emoji-preview">← Selected</span>
+                            </div>
+                        </div>
+
+                        <div class="emoji-picker-container">
+                            <div class="emoji-quick-pick" id="emoji-picker">
+                                <!-- Emojis injected via JS -->
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-primary full-width-btn" style="margin-top: 16px;">Create
+                            Category</button>
+                    </form>
+                </div>
+
+                <!-- Right: Existing List -->
+                <div class="cat-list-section">
+                    <h3>Existing Categories</h3>
+                    <div class="categories-list-scroll" id="categories-list-container">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div id="import-modal" class="modal hidden">
+        <div class="modal-content import-modal-content" style="width: 700px; max-width: 90%;">
+            <div class="category-modal-header">
+                <h2>Import Bill</h2>
+                <button type="button" class="btn-icon-only" id="close-import-btn">✕</button>
+            </div>
+
+            <div class="import-layout" style="display:flex; gap:20px;">
+                <!-- Left: File Upload -->
+                <div class="import-section" style="flex: 1;">
+                    <h3>1. Select Source & File</h3>
+                    <select id="import-source" class="input-field" style="margin-bottom: 12px; width: 100%;">
+                        <option value="wechat">WeChat (微信支付)</option>
+                        <option value="alipay">Alipay (支付宝)</option>
+                    </select>
+
+                    <div class="file-drop-area">
+                        <input type="file" id="import-file" accept=".xlsx, .csv">
+                        <p>Drag file (.xlsx / .csv) here or click</p>
+                    </div>
+                    <button id="upload-btn" class="btn-primary full-width-btn" style="margin-top: 10px;">
+                        Upload & Import
+                    </button>
+                    <div id="import-status" style="margin-top:10px; font-size:13px; color:#aaa;"></div>
+                </div>
+
+                <!-- Right: Rule Management -->
+                <div class="rules-section" style="flex: 1; border-left: 1px solid var(--border); padding-left: 20px;">
+                    <h3>2. Keyword Rules</h3>
+                    <p style="font-size:12px; color:#888;">Auto-categorize based on description keywords.</p>
+
+                    <form id="rule-form" style="display: flex; gap: 8px; margin-bottom: 10px;">
+                        <input type="text" id="rule-keyword" placeholder="Keyword (e.g. KFC)" required
+                            style="flex:1; border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); padding: 8px; border-radius: 4px;">
+
+                        <div style="position: relative; width: 140px;">
+                            <select id="rule-category" class="input-field"
+                                style="width: 100%; height: 100%; -webkit-appearance: none; appearance: none;">
+                                <!-- Populated dynamically -->
+                            </select>
+                            <div style="position: absolute; right: 10px; top: 10px; pointer-events: none;">▼</div>
+                        </div>
+
+                        <button type="submit" class="btn-secondary"
+                            style="padding: 8px 12px; font-weight: bold;">+</button>
+                    </form>
+
+                    <div id="rules-list" class="rules-list-container"
+                        style="height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px;">
+                        <!-- Rules injected here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Developer Mode Modal -->
+    <div id="dev-modal" class="modal hidden">
+        <div class="modal-content dev-modal-content" style="width: 80%; max-width: 900px;">
+            <div class="category-modal-header">
+                <h2>Developer Mode: JSONL Editor</h2>
+                <button type="button" class="btn-icon-only" id="close-dev-btn">✕</button>
+            </div>
+            <p style="color: var(--text-secondary); margin-bottom: 10px; font-size: 0.9em;">
+                Each line represents one transaction record.<br>
+                Edit carefully. Invalid JSON will cause errors. ID fields are required to maintain strict updates.
+            </p>
+            <textarea id="jsonl-editor" spellcheck="false"></textarea>
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary" id="cancel-dev-btn">Cancel</button>
+                <button type="button" class="btn-primary" id="save-dev-btn">Save & Overwrite DB</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
