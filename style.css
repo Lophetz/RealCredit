@@ -139,6 +139,94 @@ body {
     height: 100vh;
 }
 
+.workspace-layout {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: 16px;
+    padding: 16px 20px 20px;
+    overflow: hidden;
+}
+
+.workspace-sidebar {
+    width: 380px;
+    min-width: 380px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--board-bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    transition: width 0.25s ease, min-width 0.25s ease, box-shadow 0.25s ease;
+}
+
+.workspace-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.workspace-sidebar-copy h2 {
+    margin: 0 0 4px;
+    font-size: 16px;
+}
+
+.workspace-sidebar-copy p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.workspace-sidebar-mini-label {
+    display: none;
+    font-size: 12px;
+    color: var(--text-secondary);
+    writing-mode: vertical-rl;
+    letter-spacing: 2px;
+}
+
+.sidebar-toggle-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--nav-btn-bg);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.sidebar-toggle-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+
+.workspace-layout.sidebar-collapsed .workspace-sidebar {
+    width: 56px;
+    min-width: 56px;
+}
+
+.workspace-layout.sidebar-collapsed .workspace-sidebar-copy,
+.workspace-layout.sidebar-collapsed .workspace-panels {
+    display: none;
+}
+
+.workspace-layout.sidebar-collapsed .workspace-sidebar-header {
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    padding: 14px 8px;
+}
+
+.workspace-layout.sidebar-collapsed .workspace-sidebar-mini-label {
+    display: block;
+}
+
 .top-bar {
     padding: 0 24px;
     height: 64px;
@@ -329,9 +417,11 @@ body {
     flex: 1;
     display: flex;
     overflow-x: auto;
-    padding: 20px;
+    padding: 4px 4px 16px 4px;
     gap: 16px;
     scroll-behavior: smooth;
+    min-width: 0;
+    min-height: 0;
 }
 
 /* Global Scrollbar styling */
@@ -1296,33 +1386,34 @@ body {
 }
 
 .workspace-panels {
-    padding: 16px 20px 0;
+    padding: 16px;
     display: flex;
     flex-direction: column;
     gap: 14px;
+    overflow-y: auto;
 }
 
 .filter-bar {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 10px;
     padding: 14px;
-    background: var(--board-bg);
+    background: var(--card-bg);
     border: 1px solid var(--border);
     border-radius: 12px;
-    align-items: end;
+    align-items: stretch;
 }
 
 .filter-chip {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    min-width: 120px;
+    min-width: 0;
 }
 
 .filter-chip.wide {
-    min-width: 240px;
-    flex: 1;
+    min-width: 0;
+    flex: initial;
 }
 
 .filter-chip label,
@@ -1351,13 +1442,13 @@ body {
 }
 
 .filter-meta {
-    margin-left: auto;
-    align-self: center;
+    margin-left: 0;
+    align-self: flex-start;
 }
 
 .insight-strip {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
 }
 
@@ -1418,7 +1509,7 @@ body {
 
 .installment-rail {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: 1fr;
     gap: 12px;
 }
 
@@ -1665,6 +1756,32 @@ body {
 }
 
 @media (max-width: 1024px) {
+    .workspace-layout {
+        flex-direction: column;
+        padding: 12px 16px 16px;
+    }
+
+    .workspace-sidebar,
+    .workspace-layout.sidebar-collapsed .workspace-sidebar {
+        width: auto;
+        min-width: 0;
+    }
+
+    .workspace-layout.sidebar-collapsed .workspace-sidebar-header {
+        height: auto;
+        flex-direction: row;
+        justify-content: space-between;
+        padding: 16px;
+    }
+
+    .workspace-layout.sidebar-collapsed .workspace-sidebar-mini-label {
+        display: none;
+    }
+
+    .workspace-layout.sidebar-collapsed .workspace-panels {
+        display: none;
+    }
+
     .import-layout,
     .backup-layout {
         grid-template-columns: 1fr;
@@ -1692,14 +1809,16 @@ body {
         flex-wrap: wrap;
     }
 
-    .filter-meta {
-        margin-left: 0;
-        width: 100%;
+    .insight-strip {
+        grid-template-columns: 1fr;
     }
 
-    .workspace-panels,
+    .workspace-layout {
+        padding: 10px 12px 12px;
+    }
+
     .board-container {
-        padding-left: 16px;
-        padding-right: 16px;
+        padding-left: 0;
+        padding-right: 0;
     }
 }

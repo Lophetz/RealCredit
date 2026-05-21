@@ -9,6 +9,7 @@ let categoriesList = [];
 let categoryIcons = {};
 let rulesList = [];
 let importPreviewCache = null;
+let workspaceSidebarCollapsed = false;
 
 const filters = {
     search: "",
@@ -724,6 +725,30 @@ function renderInstallmentDashboard() {
 }
 
 
+function applyWorkspaceSidebarState() {
+    const layout = document.getElementById("workspace-layout");
+    const toggle = document.getElementById("workspace-sidebar-toggle");
+    if (!layout || !toggle) return;
+
+    layout.classList.toggle("sidebar-collapsed", workspaceSidebarCollapsed);
+    toggle.textContent = workspaceSidebarCollapsed ? "→" : "←";
+    toggle.title = workspaceSidebarCollapsed ? "展开侧栏" : "收起侧栏";
+}
+
+
+function toggleWorkspaceSidebar() {
+    workspaceSidebarCollapsed = !workspaceSidebarCollapsed;
+    localStorage.setItem("workspaceSidebarCollapsed", workspaceSidebarCollapsed ? "1" : "0");
+    applyWorkspaceSidebarState();
+}
+
+
+function loadWorkspaceSidebarState() {
+    workspaceSidebarCollapsed = localStorage.getItem("workspaceSidebarCollapsed") === "1";
+    applyWorkspaceSidebarState();
+}
+
+
 async function renderCurrentView() {
     if (currentView === "daily") {
         await fetchBudget(currentDate);
@@ -1272,6 +1297,7 @@ function setupEventListeners() {
     document.getElementById("save-dev-btn").onclick = saveDevMode;
 
     document.getElementById("theme-toggle-btn").onclick = toggleTheme;
+    document.getElementById("workspace-sidebar-toggle").onclick = toggleWorkspaceSidebar;
 }
 
 
@@ -1344,6 +1370,7 @@ window.updateBudget = updateBudget;
 async function init() {
     loadTheme();
     setupEventListeners();
+    loadWorkspaceSidebarState();
     updateViewButtons();
 
     try {

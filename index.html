@@ -53,54 +53,67 @@
             </div>
         </header>
 
-        <section class="workspace-panels">
-            <div class="filter-bar">
-                <div class="filter-chip wide">
-                    <label for="search-input">搜索</label>
-                    <input id="search-input" type="text" placeholder="描述 / 分类 / 日期">
-                </div>
-                <div class="filter-chip">
-                    <label for="type-filter">类型</label>
-                    <select id="type-filter">
-                        <option value="all">全部</option>
-                        <option value="expense">支出</option>
-                        <option value="income">收入</option>
-                    </select>
-                </div>
-                <div class="filter-chip">
-                    <label for="category-filter">分类</label>
-                    <select id="category-filter">
-                        <option value="all">全部分类</option>
-                    </select>
-                </div>
-                <div class="filter-chip">
-                    <label for="amortization-filter">分期</label>
-                    <select id="amortization-filter">
-                        <option value="all">全部</option>
-                        <option value="amortized">仅分期</option>
-                        <option value="single">仅单笔</option>
-                    </select>
-                </div>
-                <button id="clear-filters-btn" class="btn-secondary filter-reset-btn">清空筛选</button>
-                <div class="filter-meta" id="filter-meta">显示全部记录</div>
-            </div>
-
-            <div class="insight-strip" id="insight-strip"></div>
-
-            <div class="installment-panel">
-                <div class="panel-heading">
-                    <div>
-                        <h3>分期看板</h3>
-                        <p>当前进行中的分摊、剩余期数和下一次入账时间</p>
+        <div class="workspace-layout" id="workspace-layout">
+            <aside class="workspace-sidebar" id="workspace-sidebar">
+                <div class="workspace-sidebar-header">
+                    <div class="workspace-sidebar-copy">
+                        <h2>分析侧栏</h2>
+                        <p>筛选、洞察和分期看板</p>
                     </div>
+                    <div class="workspace-sidebar-mini-label">看板</div>
+                    <button id="workspace-sidebar-toggle" class="sidebar-toggle-btn" title="收起侧栏">←</button>
                 </div>
-                <div class="installment-rail" id="installment-rail"></div>
-            </div>
-        </section>
 
-        <main class="board-container" id="board">
-            <div class="loading">正在加载看板...</div>
-        </main>
+                <section class="workspace-panels">
+                    <div class="filter-bar">
+                        <div class="filter-chip wide">
+                            <label for="search-input">搜索</label>
+                            <input id="search-input" type="text" placeholder="描述 / 分类 / 日期">
+                        </div>
+                        <div class="filter-chip">
+                            <label for="type-filter">类型</label>
+                            <select id="type-filter">
+                                <option value="all">全部</option>
+                                <option value="expense">支出</option>
+                                <option value="income">收入</option>
+                            </select>
+                        </div>
+                        <div class="filter-chip">
+                            <label for="category-filter">分类</label>
+                            <select id="category-filter">
+                                <option value="all">全部分类</option>
+                            </select>
+                        </div>
+                        <div class="filter-chip">
+                            <label for="amortization-filter">分期</label>
+                            <select id="amortization-filter">
+                                <option value="all">全部</option>
+                                <option value="amortized">仅分期</option>
+                                <option value="single">仅单笔</option>
+                            </select>
+                        </div>
+                        <button id="clear-filters-btn" class="btn-secondary filter-reset-btn">清空筛选</button>
+                        <div class="filter-meta" id="filter-meta">显示全部记录</div>
+                    </div>
+
+                    <div class="insight-strip" id="insight-strip"></div>
+
+                    <div class="installment-panel">
+                        <div class="panel-heading">
+                            <div>
+                                <h3>分期看板</h3>
+                                <p>当前进行中的分摊、剩余期数和下一次入账时间</p>
+                            </div>
+                        </div>
+                        <div class="installment-rail" id="installment-rail"></div>
+                    </div>
+                </section>
+            </aside>
+
+            <main class="board-container" id="board">
+                <div class="loading">正在加载看板...</div>
+            </main>
+        </div>
     </div>
 
     <div id="item-modal" class="modal hidden">
