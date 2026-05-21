@@ -13,7 +13,6 @@
         rel="stylesheet">
 </head>
 
-
 <body>
     <div class="app-container">
         <header class="top-bar">
@@ -21,13 +20,12 @@
                 <h1>RealCredit</h1>
                 <span class="user-signature">Yuqiu</span>
                 <div class="budget-widget" id="budget-widget" style="display:none;">
-                    <span class="budget-label">月度预算:</span>
+                    <span class="budget-label">月预算</span>
                     <div class="budget-input-wrapper">
                         <span class="currency-symbol">¥</span>
                         <input type="number" id="month-budget-input" placeholder="0" onchange="updateBudget()">
                     </div>
-                    <!-- Total Month Progress -->
-                    <div id="total-budget-container" class="total-budget-container" style="display: none;">
+                    <div id="total-budget-container" class="total-budget-container" style="display:none;">
                         <div class="total-budget-bar-bg">
                             <div id="total-budget-fill" class="total-budget-fill"></div>
                         </div>
@@ -37,17 +35,17 @@
             </div>
 
             <div class="controls-group">
-                <button id="theme-toggle-btn" class="theme-mode-btn" title="切换亮/暗模式">☀️</button>
+                <button id="theme-toggle-btn" class="theme-mode-btn" title="切换亮色/暗色模式">☀️</button>
                 <div class="view-toggle">
-                    <button id="daily-view-btn" class="view-btn active">日报</button>
-                    <button id="monthly-view-btn" class="view-btn">月报</button>
+                    <button id="daily-view-btn" class="view-btn active">日视图</button>
+                    <button id="monthly-view-btn" class="view-btn">月视图</button>
                     <button id="calendar-view-btn" class="view-btn">日历</button>
                 </div>
 
                 <div class="nav-controls">
-                    <button id="import-btn-nav" class="nav-btn" title="导入微信/支付宝账单 Excel">📥 导入</button>
-                    <button id="dev-mode-btn" class="nav-btn dev-btn" title="开发者模式 / 数据编辑器">🔧
-                        开发</button>
+                    <button id="import-btn-nav" class="nav-btn" title="导入微信 / 支付宝账单">导入</button>
+                    <button id="backup-btn-nav" class="nav-btn" title="导出或恢复完整备份">备份</button>
+                    <button id="dev-mode-btn" class="nav-btn dev-btn" title="开发者模式 / 数据编辑器">开发</button>
                     <button id="prev-days" class="nav-btn"><span class="icon">←</span> 上一页</button>
                     <button id="today-btn" class="nav-btn today">今天</button>
                     <button id="next-days" class="nav-btn">下一页 <span class="icon">→</span></button>
@@ -55,16 +53,59 @@
             </div>
         </header>
 
+        <section class="workspace-panels">
+            <div class="filter-bar">
+                <div class="filter-chip wide">
+                    <label for="search-input">搜索</label>
+                    <input id="search-input" type="text" placeholder="描述 / 分类 / 日期">
+                </div>
+                <div class="filter-chip">
+                    <label for="type-filter">类型</label>
+                    <select id="type-filter">
+                        <option value="all">全部</option>
+                        <option value="expense">支出</option>
+                        <option value="income">收入</option>
+                    </select>
+                </div>
+                <div class="filter-chip">
+                    <label for="category-filter">分类</label>
+                    <select id="category-filter">
+                        <option value="all">全部分类</option>
+                    </select>
+                </div>
+                <div class="filter-chip">
+                    <label for="amortization-filter">分期</label>
+                    <select id="amortization-filter">
+                        <option value="all">全部</option>
+                        <option value="amortized">仅分期</option>
+                        <option value="single">仅单笔</option>
+                    </select>
+                </div>
+                <button id="clear-filters-btn" class="btn-secondary filter-reset-btn">清空筛选</button>
+                <div class="filter-meta" id="filter-meta">显示全部记录</div>
+            </div>
+
+            <div class="insight-strip" id="insight-strip"></div>
+
+            <div class="installment-panel">
+                <div class="panel-heading">
+                    <div>
+                        <h3>分期看板</h3>
+                        <p>当前进行中的分摊、剩余期数和下一次入账时间</p>
+                    </div>
+                </div>
+                <div class="installment-rail" id="installment-rail"></div>
+            </div>
+        </section>
+
         <main class="board-container" id="board">
-            <!-- Columns will be injected here via JS -->
             <div class="loading">正在加载看板...</div>
         </main>
     </div>
 
-    <!-- Add/Edit Item Modal -->
     <div id="item-modal" class="modal hidden">
         <div class="modal-content">
-            <h2 id="modal-title">添加记录</h2>
+            <h2 id="modal-title">新增记录</h2>
             <form id="item-form">
                 <input type="hidden" id="entry-date">
                 <input type="hidden" id="expense-id">
@@ -73,15 +114,14 @@
                 <div class="form-group">
                     <label>类型</label>
                     <div class="type-selector">
-                        <div class="type-option active" data-type="expense" onclick="selectType('expense')">支出
-                        </div>
+                        <div class="type-option active" data-type="expense" onclick="selectType('expense')">支出</div>
                         <div class="type-option" data-type="income" onclick="selectType('income')">收入</div>
                     </div>
                 </div>
 
                 <div class="form-group">
                     <label>描述</label>
-                    <input type="text" id="desc" required placeholder="例如：午餐">
+                    <input type="text" id="desc" required placeholder="例如：午饭、滴滴、工资">
                 </div>
 
                 <div class="form-group">
@@ -91,32 +131,21 @@
 
                 <div class="form-group">
                     <label>分类</label>
-                    <select id="category">
-                        <option value="Food">🍔 餐饮 (Food)</option>
-                        <option value="Transport">🚗 交通 (Transport)</option>
-                        <option value="Shopping">🛍️ 购物 (Shopping)</option>
-                        <option value="Housing">🏠 居住 (Housing)</option>
-                        <option value="Entertainment">🎬 娱乐 (Entertainment)</option>
-                        <option value="Utilities">💡 生活服务 (Utilities)</option>
-                        <option value="Salary">💰 工资 (Salary)</option>
-                        <option value="Business">💼 生意 (Business)</option>
-                        <option value="Investment">📈 投资 (Investment)</option>
-                        <option value="Other">📦 其他 (Other)</option>
-                    </select>
+                    <select id="category"></select>
                 </div>
 
                 <div class="form-group">
-                    <label>持续时长 / 分摊</label>
+                    <label>分摊周期</label>
                     <div class="modal-row">
-                        <input type="number" id="months" value="1" min="1" placeholder="时长">
+                        <input type="number" id="months" value="1" min="1" placeholder="期数">
                         <select id="unit" onchange="toggleWeekendOption()">
                             <option value="months">月</option>
                             <option value="days">天</option>
                         </select>
                     </div>
-                    <div class="checkbox-group" id="weekend-option" style="display:none">
+                    <div class="checkbox-group" id="weekend-option" style="display:none;">
                         <input type="checkbox" id="skip-weekends">
-                        <label for="skip-weekends">跳过周末 (仅工作日)</label>
+                        <label for="skip-weekends">按天分摊时跳过周末</label>
                     </div>
                 </div>
 
@@ -128,119 +157,136 @@
         </div>
     </div>
 
-    <!-- Manage Categories Modal -->
     <div id="category-modal" class="modal hidden">
         <div class="modal-content category-modal-content">
             <div class="category-modal-header">
-                <h2>管理分类</h2>
+                <h2>分类管理</h2>
                 <button type="button" class="btn-icon-only" id="close-cat-btn">✕</button>
             </div>
 
             <div class="category-manager-layout">
-                <!-- Left: Add New -->
                 <div class="cat-create-section">
                     <h3>新增分类</h3>
                     <form id="category-form">
                         <div class="form-group">
-                            <label>名称</label>
-                            <input type="text" id="new-cat-name" required placeholder="例如：健身">
+                            <label>分类名称</label>
+                            <input type="text" id="new-cat-name" required placeholder="例如：宠物、旅行">
                         </div>
                         <div class="form-group">
-                            <label>图标 (选择或输入)</label>
+                            <label>图标</label>
                             <div class="emoji-input-row">
-                                <input type="text" id="new-cat-icon" required placeholder="💪" maxlength="2">
-                                <span class="emoji-preview">← 已选</span>
+                                <input type="text" id="new-cat-icon" required placeholder="🐾" maxlength="2">
+                                <span class="emoji-preview">可直接输入或下方选择</span>
                             </div>
                         </div>
 
                         <div class="emoji-picker-container">
-                            <div class="emoji-quick-pick" id="emoji-picker">
-                                <!-- Emojis injected via JS -->
-                            </div>
+                            <div class="emoji-quick-pick" id="emoji-picker"></div>
                         </div>
 
-                        <button type="submit" class="btn-primary full-width-btn" style="margin-top: 16px;">创建分类</button>
+                        <button type="submit" class="btn-primary full-width-btn" style="margin-top: 16px;">保存分类</button>
                     </form>
                 </div>
 
-                <!-- Right: Existing List -->
                 <div class="cat-list-section">
                     <h3>已有分类</h3>
-                    <div class="categories-list-scroll" id="categories-list-container">
-                        <!-- Populated by JS -->
-                    </div>
+                    <div class="categories-list-scroll" id="categories-list-container"></div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Import Modal -->
     <div id="import-modal" class="modal hidden">
-        <div class="modal-content import-modal-content" style="width: 700px; max-width: 90%;">
+        <div class="modal-content import-modal-content" style="width: 920px; max-width: 94%;">
             <div class="category-modal-header">
-                <h2>导入账单</h2>
+                <h2>账单导入</h2>
                 <button type="button" class="btn-icon-only" id="close-import-btn">✕</button>
             </div>
 
-            <div class="import-layout" style="display:flex; gap:20px;">
-                <!-- Left: File Upload -->
-                <div class="import-section" style="flex: 1;">
-                    <h3>1. 选择来源和文件</h3>
-                    <select id="import-source" class="input-field" style="margin-bottom: 12px; width: 100%;">
-                        <option value="wechat">微信支付</option>
-                        <option value="alipay">支付宝</option>
+            <div class="import-layout">
+                <div class="import-section">
+                    <h3>1. 选择文件</h3>
+                    <select id="import-source" class="input-field import-source-select">
+                        <option value="wechat">微信账单</option>
+                        <option value="alipay">支付宝账单</option>
                     </select>
 
                     <div class="file-drop-area">
-                        <input type="file" id="import-file" accept=".xlsx, .csv">
-                        <p>拖拽文件 (.xlsx / .csv) 到此处或点击</p>
+                        <input type="file" id="import-file" accept=".xlsx,.csv">
+                        <p>拖入或点击选择账单文件 (.xlsx / .csv)</p>
                     </div>
-                    <button id="upload-btn" class="btn-primary full-width-btn" style="margin-top: 10px;">
-                        上传并导入
-                    </button>
-                    <div id="import-status" style="margin-top:10px; font-size:13px; color:#aaa;"></div>
+
+                    <div class="import-action-row">
+                        <button id="preview-upload-btn" class="btn-secondary">先预览规则命中</button>
+                        <button id="upload-btn" class="btn-primary">确认导入</button>
+                    </div>
+
+                    <div id="import-status" class="import-status"></div>
+
+                    <div class="import-preview-box">
+                        <div class="panel-heading compact">
+                            <div>
+                                <h3>2. 导入预览</h3>
+                                <p>导入前查看规则命中、重复项和归类结果</p>
+                            </div>
+                        </div>
+                        <div id="import-preview-summary" class="preview-summary empty-state">尚未生成预览</div>
+                        <div id="import-preview-list" class="preview-list"></div>
+                    </div>
                 </div>
 
-                <!-- Right: Rule Management -->
-                <div class="rules-section" style="flex: 1; border-left: 1px solid var(--border); padding-left: 20px;">
-                    <h3>2. 关键词规则</h3>
-                    <p style="font-size:12px; color:#888;">根据描述关键词自动分类。</p>
+                <div class="rules-section">
+                    <h3>规则管理</h3>
+                    <p class="helper-text">导入时会优先用关键词规则给交易自动分类。</p>
 
-                    <form id="rule-form" style="display: flex; gap: 8px; margin-bottom: 10px;">
-                        <input type="text" id="rule-keyword" placeholder="关键词 (例如: KFC)" required
-                            style="flex:1; border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); padding: 8px; border-radius: 4px;">
-
-                        <div style="position: relative; width: 140px;">
-                            <select id="rule-category" class="input-field"
-                                style="width: 100%; height: 100%; -webkit-appearance: none; appearance: none;">
-                                <!-- Populated dynamically -->
-                            </select>
-                            <div style="position: absolute; right: 10px; top: 10px; pointer-events: none;">▼</div>
+                    <form id="rule-form" class="rule-form">
+                        <input type="text" id="rule-keyword" placeholder="关键词，例如 KFC、滴滴" required>
+                        <div class="rule-category-wrap">
+                            <select id="rule-category" class="input-field"></select>
                         </div>
-
-                        <button type="submit" class="btn-secondary"
-                            style="padding: 8px 12px; font-weight: bold;">+</button>
+                        <button type="submit" class="btn-secondary">+</button>
                     </form>
 
-                    <div id="rules-list" class="rules-list-container"
-                        style="height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px;">
-                        <!-- Rules injected here -->
-                    </div>
+                    <div id="rules-list" class="rules-list-container"></div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Developer Mode Modal -->
+    <div id="backup-modal" class="modal hidden">
+        <div class="modal-content backup-modal-content">
+            <div class="category-modal-header">
+                <h2>备份与恢复</h2>
+                <button type="button" class="btn-icon-only" id="close-backup-btn">✕</button>
+            </div>
+
+            <div class="backup-layout">
+                <div class="backup-card">
+                    <h3>导出完整备份</h3>
+                    <p>会包含记录、分类、预算和规则，导出为一个 JSON 文件。</p>
+                    <button id="download-backup-btn" class="btn-primary">下载备份</button>
+                </div>
+
+                <div class="backup-card">
+                    <h3>恢复备份</h3>
+                    <p>恢复会覆盖当前所有数据，建议先导出一份现有备份。</p>
+                    <input type="file" id="backup-file" accept=".json">
+                    <button id="restore-backup-btn" class="btn-secondary">恢复备份</button>
+                </div>
+            </div>
+
+            <div id="backup-status" class="import-status"></div>
+        </div>
+    </div>
+
     <div id="dev-modal" class="modal hidden">
         <div class="modal-content dev-modal-content" style="width: 80%; max-width: 900px;">
             <div class="category-modal-header">
-                <h2>开发者模式：数据编辑器</h2>
+                <h2>开发者模式 / JSONL 编辑器</h2>
                 <button type="button" class="btn-icon-only" id="close-dev-btn">✕</button>
             </div>
             <p style="color: var(--text-secondary); margin-bottom: 10px; font-size: 0.9em;">
-                每一行代表一条交易记录。<br>
-                请小心编辑。无效的 JSON 会导致错误。ID 字段是必须的，以保持严格更新。
+                每行一条 JSON 记录。保存时会用编辑器内容覆盖当前全部流水，请先备份。
             </p>
             <textarea id="jsonl-editor" spellcheck="false"></textarea>
             <div class="modal-actions">

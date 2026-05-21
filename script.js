@@ -1,1135 +1,1358 @@
-const API_URL = 'http://localhost:8000';
+const API_URL = "http://localhost:8000";
+
 let currentDate = new Date();
+let currentView = "daily";
 let expenses = [];
+let filteredExpenses = [];
 let monthBudget = 0;
-let currentView = 'daily'; // 'daily', 'monthly', or 'calendar'
 let categoriesList = [];
 let categoryIcons = {};
+let rulesList = [];
+let importPreviewCache = null;
+
+const filters = {
+    search: "",
+    type: "all",
+    category: "all",
+    amortization: "all",
+};
 
 const emojiList = [
-    '🍔', '🚗', '🛍️', '🏠', '🎬', '💡', '💰', '💼', '📈', '📦',
-    '🐱', '🐶', '🍕', '🍺', '🎮', '✈️', '🏥', '📚', '🎁', '💅',
-    '🏋️', '🚕', '🥖', '🍎', '🍼', '🎓', '💸', '🏦', '🎨', '🎵'
+    "🍜", "🚇", "🛍️", "🏠", "🎮", "💡", "💼", "📈", "📊", "📦",
+    "🐾", "✈️", "🏥", "🎓", "☕", "🍔", "🧴", "🎁", "🚗", "🏋️",
+    "🎬", "📚", "🧸", "💄", "🧰", "🧾", "🎵", "🍺", "🪴", "🧳",
 ];
 
-async function fetchBudget(dateObj) {
-    const monthStr = dateObj.toISOString().slice(0, 7); // YYYY-MM
-    try {
-        const res = await fetch(`${API_URL}/budgets/${monthStr}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        monthBudget = data.amount;
 
-        const budgetWidget = document.getElementById('budget-widget');
-        const budgetInput = document.getElementById('month-budget-input');
+function parseDateValue(value) {
+    if (value instanceof Date) {
+        return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+    }
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        const [year, month, day] = value.split("-").map(Number);
+        return new Date(year, month - 1, day);
+    }
+    return new Date(value);
+}
 
-        if (currentView === 'daily') {
-            budgetWidget.style.display = 'flex';
-            budgetInput.value = monthBudget > 0 ? monthBudget : ''; // Show empty if 0
-        } else {
-            budgetWidget.style.display = 'none';
+
+function formatDate(dateObj) {
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+    const day = String(dateObj.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+
+function formatCurrency(amount, digits = 2) {
+    return `¥${Number(amount || 0).toFixed(digits)}`;
+}
+
+
+function normalizeText(value) {
+    return (value || "").toString().trim().toLowerCase();
+}
+
+
+function setStatus(elementId, text, tone = "neutral") {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+
+    element.textContent = text;
+    element.classList.remove("tone-success", "tone-warning", "tone-danger");
+    if (tone === "success") element.classList.add("tone-success");
+    if (tone === "warning") element.classList.add("tone-warning");
+    if (tone === "danger") element.classList.add("tone-danger");
+}
+
+
+function getTodayString() {
+    return formatDate(new Date());
+}
+
+
+function getVisibleExpenses() {
+    return filteredExpenses;
+}
+
+
+function getExpensesForDate(dateStr) {
+    return getVisibleExpenses().filter((expense) => expense.date === dateStr);
+}
+
+
+function getExpensesForMonth(year, month) {
+    return getVisibleExpenses().filter((expense) => {
+        const expenseDate = parseDateValue(expense.date);
+        return expenseDate.getFullYear() === year && expenseDate.getMonth() + 1 === month;
+    });
+}
+
+
+function getRangeExpenses(startDate, endDate) {
+    const startStr = formatDate(startDate);
+    const endStr = formatDate(endDate);
+    return getVisibleExpenses().filter((expense) => expense.date >= startStr && expense.date <= endStr);
+}
+
+
+function aggregateByCategory(items) {
+    const categoryTotals = {};
+    let expenseTotal = 0;
+    let incomeTotal = 0;
+
+    items.forEach((item) => {
+        const category = item.category || "Other";
+        if (!categoryTotals[category]) {
+            categoryTotals[category] = { expense: 0, income: 0 };
         }
 
-    } catch (e) {
-        console.error("获取预算失败", e);
+        const amount = Math.abs(Number(item.amount || 0));
+        if ((item.type || "expense") === "income") {
+            categoryTotals[category].income += amount;
+            incomeTotal += amount;
+        } else {
+            categoryTotals[category].expense += amount;
+            expenseTotal += amount;
+        }
+    });
+
+    return {
+        categoryTotals,
+        expenseTotal,
+        incomeTotal,
+        netTotal: incomeTotal - expenseTotal,
+    };
+}
+
+
+function getRangeContext() {
+    if (currentView === "daily") {
+        const start = new Date(currentDate);
+        start.setDate(start.getDate() - 3);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 6);
+        return {
+            label: "7 天窗口",
+            start,
+            end,
+        };
+    }
+
+    const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+    const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+    return {
+        label: currentView === "monthly" ? "当月洞察" : "日历月洞察",
+        start,
+        end,
+    };
+}
+
+
+async function fetchBudget(dateObj) {
+    const monthStr = formatDate(new Date(dateObj.getFullYear(), dateObj.getMonth(), 1)).slice(0, 7);
+    try {
+        const response = await fetch(`${API_URL}/budgets/${monthStr}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        monthBudget = Number(data.amount || 0);
+
+        const budgetWidget = document.getElementById("budget-widget");
+        const budgetInput = document.getElementById("month-budget-input");
+        if (currentView === "daily") {
+            budgetWidget.style.display = "flex";
+            budgetInput.value = monthBudget > 0 ? monthBudget : "";
+        } else {
+            budgetWidget.style.display = "none";
+        }
+    } catch (error) {
+        console.error("fetch budget failed", error);
     }
 }
 
+
 async function updateBudget() {
-    const amount = parseFloat(document.getElementById('month-budget-input').value) || 0;
-    const monthStr = currentDate.toISOString().slice(0, 7); // YYYY-MM
+    const amount = parseFloat(document.getElementById("month-budget-input").value) || 0;
+    const monthStr = formatDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)).slice(0, 7);
 
     try {
         await fetch(`${API_URL}/budgets`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ month: monthStr, amount })
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ month: monthStr, amount }),
         });
         monthBudget = amount;
-        renderBoard(currentDate); // Re-render to show updated status
-    } catch (e) {
-        console.error("更新预算失败", e);
+        await renderCurrentView();
+    } catch (error) {
+        console.error("update budget failed", error);
     }
 }
 
-async function init() {
-    loadTheme();
-    setupEventListeners(); // Setup listeners immediately so UI is responsive
-
-    try {
-        await fetchCategories();
-        await fetchExpenses();
-        await fetchBudget(currentDate);
-        renderBoard(currentDate);
-    } catch (e) {
-        console.error("初始化错误 (部分):", e);
-        // Even if some fetches fail, we try to render what we can or at least leave UI responsive
-    }
-}
 
 async function fetchExpenses() {
-    try {
-        // Fetch wide range just in case. Optimization: fetch dynamic window.
-        // For now, fetch all.
-        const res = await fetch(`${API_URL}/expenses`);
-        if (!res.ok) throw new Error(`加载支出失败: ${res.statusText}`);
-        expenses = await res.json();
-    } catch (e) {
-        console.error("获取支出失败", e);
-        document.getElementById('board').innerHTML = `<div class="error-message">❌ 加载数据失败。后端是否在运行？<br>${e.message}</div>`;
-        throw e;
+    const response = await fetch(`${API_URL}/expenses`);
+    if (!response.ok) {
+        throw new Error(`加载记录失败: ${response.statusText}`);
     }
+    expenses = await response.json();
 }
+
 
 async function fetchCategories() {
-    try {
-        const res = await fetch(`${API_URL}/categories`);
-        if (!res.ok) return;
-        categoriesList = await res.json();
+    const response = await fetch(`${API_URL}/categories`);
+    if (!response.ok) return;
 
-        // Update icons map
-        categoryIcons = {};
-        categoriesList.forEach(c => {
-            categoryIcons[c.name] = c.icon;
-        });
-
-        populateCategorySelect();
-    } catch (e) {
-        console.error("获取分类失败", e);
-    }
-}
-
-function populateCategorySelect() {
-    const select = document.getElementById('category');
-    select.innerHTML = '';
-
-    categoriesList.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.name;
-        opt.textContent = `${c.icon} ${c.name}`;
-        select.appendChild(opt);
+    categoriesList = await response.json();
+    categoryIcons = {};
+    categoriesList.forEach((category) => {
+        categoryIcons[category.name] = category.icon;
     });
 
-    // Add option to create new
-    const newOpt = document.createElement('option');
-    newOpt.value = '__NEW__';
-    newOpt.textContent = '➕ 添加新分类...';
-    select.appendChild(newOpt);
+    populateCategorySelect();
+    populateCategoryFilter();
+    renderRuleSelect();
+}
 
-    select.onchange = (e) => {
-        const val = e.target.value;
-        if (val === '__NEW__') {
+
+async function fetchRules() {
+    const response = await fetch(`${API_URL}/rules`);
+    if (!response.ok) return;
+    rulesList = await response.json();
+    renderRules(rulesList);
+}
+
+
+function populateCategorySelect() {
+    const select = document.getElementById("category");
+    if (!select) return;
+
+    select.innerHTML = "";
+    categoriesList.forEach((category) => {
+        const option = document.createElement("option");
+        option.value = category.name;
+        option.textContent = `${category.icon} ${category.name}`;
+        select.appendChild(option);
+    });
+
+    const newOption = document.createElement("option");
+    newOption.value = "__NEW__";
+    newOption.textContent = "➕ 新建分类...";
+    select.appendChild(newOption);
+
+    select.onchange = (event) => {
+        const value = event.target.value;
+        if (value === "__NEW__") {
             openAddCategoryModal();
-            // Reset selection to first item temporarily until new one is added
-            if (categoriesList.length > 0) select.value = categoriesList[0].name;
-        } else {
-            // Auto-detect type
-            const incomeKeywords = ['Salary', 'Business', 'Investment', 'Refund', 'Bonus', 'Income', '工资', '兼职', '投资', '理财', '退款', '奖金', '收入'];
-            const isIncome = incomeKeywords.some(keyword => val.includes(keyword));
-
-            if (isIncome) {
-                selectType('income');
-            } else {
-                selectType('expense');
+            if (categoriesList[0]) {
+                select.value = categoriesList[0].name;
             }
         }
     };
 }
 
 
-function getExpensesForDate(dateStr) {
-    return expenses.filter(e => e.date === dateStr);
+function populateCategoryFilter() {
+    const select = document.getElementById("category-filter");
+    if (!select) return;
+
+    const currentValue = select.value || "all";
+    select.innerHTML = '<option value="all">全部分类</option>';
+
+    categoriesList.forEach((category) => {
+        const option = document.createElement("option");
+        option.value = category.name;
+        option.textContent = `${category.icon} ${category.name}`;
+        select.appendChild(option);
+    });
+
+    select.value = categoriesList.some((category) => category.name === currentValue) ? currentValue : "all";
 }
 
-// Add Debug Button Listener
-document.addEventListener('DOMContentLoaded', () => {
-    const debugBtn = document.createElement('button');
-    debugBtn.textContent = '🐞 调试：全部删除';
-    debugBtn.className = 'btn-delete';
-    debugBtn.style.position = 'fixed';
-    debugBtn.style.bottom = '20px';
-    debugBtn.style.right = '20px';
-    debugBtn.style.zIndex = '9999';
-    debugBtn.style.opacity = '0.7';
-    debugBtn.onclick = debugDeleteAll;
-    document.body.appendChild(debugBtn);
-});
 
-function getExpensesForMonth(year, month) {
-    // month is 1-indexed (1 = January, 12 = December)
-    return expenses.filter(e => {
-        const expenseDate = new Date(e.date);
-        return expenseDate.getFullYear() === year && expenseDate.getMonth() + 1 === month;
+function renderRuleSelect() {
+    const select = document.getElementById("rule-category");
+    if (!select) return;
+
+    const currentValue = select.value;
+    select.innerHTML = "";
+    categoriesList.forEach((category) => {
+        const option = document.createElement("option");
+        option.value = category.name;
+        option.textContent = `${category.icon} ${category.name}`;
+        select.appendChild(option);
+    });
+
+    if (currentValue && categoriesList.some((category) => category.name === currentValue)) {
+        select.value = currentValue;
+    }
+}
+
+
+function renderRules(rules) {
+    const container = document.getElementById("rules-list");
+    container.innerHTML = "";
+
+    rules.forEach((rule) => {
+        const item = document.createElement("div");
+        item.className = "rule-item";
+        item.innerHTML = `
+            <div>
+                <span class="rule-keyword">${rule.keyword}</span>
+                <span class="rule-cat-tag">${rule.category}</span>
+            </div>
+            <button class="rule-delete" onclick="deleteRule(${rule.id})">✕</button>
+        `;
+        container.appendChild(item);
     });
 }
 
-function aggregateByCategory(monthExpenses) {
-    const categoryTotals = {};
-    let expenseTotal = 0;
-    let incomeTotal = 0;
 
-    monthExpenses.forEach(expense => {
-        const category = expense.category || 'Other';
-        if (!categoryTotals[category]) {
-            categoryTotals[category] = { expense: 0, income: 0 };
-        }
+function applyFilters(reRender = true) {
+    filteredExpenses = expenses.filter((expense) => {
+        const searchMatched = !filters.search || [
+            expense.description,
+            expense.category,
+            expense.date,
+            expense.type,
+        ].some((field) => normalizeText(field).includes(filters.search));
 
-        if (expense.type === 'income') {
-            categoryTotals[category].income += Math.abs(expense.amount);
-            incomeTotal += Math.abs(expense.amount);
-        } else {
-            categoryTotals[category].expense += Math.abs(expense.amount);
-            expenseTotal += Math.abs(expense.amount);
-        }
+        const typeMatched = filters.type === "all" || (expense.type || "expense") === filters.type;
+        const categoryMatched = filters.category === "all" || expense.category === filters.category;
+        const amortizationMatched =
+            filters.amortization === "all" ||
+            (filters.amortization === "amortized" && expense.is_amortized) ||
+            (filters.amortization === "single" && !expense.is_amortized);
+
+        return searchMatched && typeMatched && categoryMatched && amortizationMatched;
     });
 
-    return { categoryTotals, expenseTotal, incomeTotal, netTotal: incomeTotal - expenseTotal };
+    const meta = document.getElementById("filter-meta");
+    if (meta) {
+        const total = expenses.length;
+        const visible = filteredExpenses.length;
+        meta.textContent = visible === total ? `显示全部 ${total} 条记录` : `筛选后显示 ${visible} / ${total} 条记录`;
+    }
+
+    if (reRender) {
+        renderCurrentView();
+    }
 }
 
 
-function formatDate(date) {
-    // YYYY-MM-DD
-    return date.toISOString().split('T')[0];
+function updateTotalBudgetProgress(year, month) {
+    const container = document.getElementById("total-budget-container");
+    if (!container) return;
+
+    if (monthBudget <= 0) {
+        container.style.display = "none";
+        return;
+    }
+
+    container.style.display = "flex";
+    const monthExpenses = getExpensesForMonth(year, month);
+    const { expenseTotal } = aggregateByCategory(monthExpenses);
+    const percent = Math.min((expenseTotal / monthBudget) * 100, 100);
+    const overBudget = expenseTotal > monthBudget;
+    const color = overBudget ? "#EF4444" : "#10B981";
+
+    const fill = document.getElementById("total-budget-fill");
+    const text = document.getElementById("total-budget-text");
+
+    fill.style.width = `${percent}%`;
+    fill.style.backgroundColor = color;
+    text.textContent = `${formatCurrency(expenseTotal, 0)} / ${formatCurrency(monthBudget, 0)} (${percent.toFixed(0)}%)`;
+    text.style.color = color;
 }
+
 
 function renderBoard(centerDate) {
-    const board = document.getElementById('board');
-    board.innerHTML = '';
+    const board = document.getElementById("board");
+    board.innerHTML = "";
 
-    // Show 7 days (one week) centered around current date
-    let start = new Date(centerDate);
-    start.setDate(start.getDate() - 3); // Show 3 days back
+    const start = new Date(centerDate);
+    start.setDate(start.getDate() - 3);
 
-    // Show 7 days total (one week)
-    for (let i = 0; i < 7; i++) {
+    for (let index = 0; index < 7; index += 1) {
+        const dateObj = new Date(start);
+        dateObj.setDate(start.getDate() + index);
+        const dateStr = formatDate(dateObj);
+        const dayItems = getExpensesForDate(dateStr);
 
-        const d = new Date(start);
-        d.setDate(d.getDate() + i);
-        const dateStr = formatDate(d);
-
-        // Budget Calculations
-        let budgetStatusHtml = '';
+        let budgetStatusHtml = "";
         if (monthBudget > 0) {
-            // Get user's timezone based days in month? Simplest is:
-            const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+            const daysInMonth = new Date(dateObj.getFullYear(), dateObj.getMonth() + 1, 0).getDate();
             const dailyLimit = monthBudget / daysInMonth;
+            const expenseTotal = dayItems
+                .filter((item) => (item.type || "expense") !== "income")
+                .reduce((sum, item) => sum + Math.abs(Number(item.amount || 0)), 0);
 
-            // Calculate today's expense stats
-            // We need to sum up expenses for this day
-            const dayItems = getExpensesForDate(dateStr);
-            let dayExpenseTotal = 0;
-            dayItems.forEach(item => {
-                // Case-insensitive check just in case data was saved differently
-                const type = (item.type || '').toLowerCase();
-                if (type !== 'income') {
-                    // For amortized items, we should technically count their daily portion? 
-                    // But getExpensesForDate returns the amortized split item for this day with its specific amount.
-                    // So just summing amount is correct.
-                    dayExpenseTotal += Math.abs(item.amount);
-                }
-            });
-
-            const isOver = dayExpenseTotal > dailyLimit;
-            const statusColor = isOver ? '#EF4444' : '#10B981'; // Red or Green
-            const percent = Math.min((dayExpenseTotal / dailyLimit) * 100, 100);
+            const overLimit = expenseTotal > dailyLimit;
+            const percent = dailyLimit > 0 ? Math.min((expenseTotal / dailyLimit) * 100, 100) : 0;
+            const color = overLimit ? "#EF4444" : "#10B981";
 
             budgetStatusHtml = `
                 <div class="daily-budget-status">
                     <div class="budget-bar">
-                        <div class="budget-fill" style="width: ${percent}%; background: ${statusColor}"></div>
+                        <div class="budget-fill" style="width:${percent}%; background:${color};"></div>
                     </div>
-                    <div class="budget-text" style="color: ${statusColor}">
-                        ¥${dayExpenseTotal.toFixed(0)} / ¥${dailyLimit.toFixed(0)}
+                    <div class="budget-text" style="color:${color};">
+                        ${formatCurrency(expenseTotal, 0)} / ${formatCurrency(dailyLimit, 0)}
                     </div>
                 </div>
             `;
         }
 
-        // Update Total Budget Progress (Once per render)
-        if (i === 0) {
-            updateTotalBudgetProgress(d.getFullYear(), d.getMonth() + 1);
+        if (index === 0) {
+            updateTotalBudgetProgress(dateObj.getFullYear(), dateObj.getMonth() + 1);
         }
 
-        const col = document.createElement('div');
-        col.className = 'column';
-        if (dateStr === formatDate(new Date())) col.classList.add('current-day-col');
+        const column = document.createElement("div");
+        column.className = "column";
+        if (dateStr === getTodayString()) {
+            column.classList.add("current-day-col");
+        }
 
-        const dateObj = new Date(dateStr);
-        const dayName = dateObj.toLocaleDateString('zh-CN', { weekday: 'short' });
-        const prettyDate = dateObj.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+        const prettyDate = dateObj.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
+        const weekday = dateObj.toLocaleDateString("zh-CN", { weekday: "short" });
 
-        const items = getExpensesForDate(dateStr);
-
-        let itemsHtml = items.map(item => {
-            // Build amount display
-            let amountHtml = '';
-            const type = (item.type || '').toLowerCase();
-            const isIncome = type === 'income';
-
-            // Handle display of potentially negative values from DB
-            const absAmount = Math.abs(item.amount);
-            const amountPrefix = isIncome ? '+' : '-';
-            const amountClass = isIncome ? 'income-amount' : 'expense-amount';
-
-            if (item.is_amortized && item.original_amount) {
-                // Determine display labels based on unit
-                const unitLabel = item.unit === 'days' ? '天' : '月';
-                const periodLabel = item.unit === 'days' ? '天' : '月';
-                const absTotal = Math.abs(item.original_amount);
-
-                amountHtml = `
-                    <div class="amount-display">
-                        <span class="amortized-amount ${amountClass}">${amountPrefix}¥${absAmount.toFixed(2)}</span>
-                        <span class="original-amount">(¥${absTotal.toFixed(2)} / ${item.amortization_months}${unitLabel})</span>
-                        <span class="amortization-indicator">${periodLabel} ${item.amortization_index + 1}/${item.amortization_months}</span>
-                    </div>
-                `;
-            } else {
-                amountHtml = `<span class="card-amount ${amountClass}">${amountPrefix}¥${absAmount.toFixed(2)}</span>`;
-            }
-
-            return `
-                <div class="expense-card ${isIncome ? 'income-card' : ''}">
-                    <div class="card-top">
-                        <span class="card-desc">${item.description}</span>
-                        ${amountHtml}
-                    </div>
-                    <div class="card-footer">
-                        <div class="card-tags">
-                            <span class="tag">${item.category}</span>
-                            ${item.is_amortized ? '<span class="tag amortized">分摊</span>' : ''}
-                            ${isIncome ? '<span class="tag income-tag">收入</span>' : ''}
-                        </div>
-                        <div class="card-actions-compact">
-                            <button class="btn-icon" title="编辑" onclick="event.stopPropagation(); editExpense(${item.id})">✏️</button>
-                            <button class="btn-icon delete" title="删除" onclick="event.stopPropagation(); deleteExpenseWrapper(${item.id}, ${item.is_amortized}, '${item.group_id || ''}')">🗑️</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-
-
-        col.innerHTML = `
+        const itemsHtml = dayItems.map((item) => renderExpenseCard(item)).join("");
+        column.innerHTML = `
             <div class="column-header">
                 <div class="date-text">${prettyDate}</div>
-                <div class="day-text">${dayName}</div>
+                <div class="day-text">${weekday}</div>
                 ${budgetStatusHtml}
             </div>
-            <div class="column-content" id="col-${dateStr}">
-                ${itemsHtml}
-                <div class="add-placeholder" onclick="openModal('${dateStr}')">
-                    + 添加记录
-                </div>
+            <div class="column-content">
+                ${itemsHtml || '<div class="category-item empty-column-tip">暂无记录</div>'}
+                <div class="add-placeholder" onclick="openModal('${dateStr}')">+ 新增记录</div>
             </div>
         `;
 
-        board.appendChild(col);
+        board.appendChild(column);
     }
 }
 
-function updateTotalBudgetProgress(year, month) {
-    const container = document.getElementById('total-budget-container');
 
-    if (monthBudget <= 0) {
-        container.style.display = 'none';
-        return;
+function renderExpenseCard(item) {
+    const entryType = item.type || "expense";
+    const isIncome = entryType === "income";
+    const amountClass = isIncome ? "income-amount" : "expense-amount";
+    const prefix = isIncome ? "+" : "-";
+    const amount = Math.abs(Number(item.amount || 0));
+    const categoryIcon = categoryIcons[item.category] || "📦";
+
+    let amountHtml = `<span class="card-amount ${amountClass}">${prefix}${formatCurrency(amount)}</span>`;
+    if (item.is_amortized && item.original_amount) {
+        const totalAmount = Math.abs(Number(item.original_amount || 0));
+        const unitLabel = item.unit === "days" ? "天" : "月";
+        amountHtml = `
+            <div class="amount-display">
+                <span class="amortized-amount ${amountClass}">${prefix}${formatCurrency(amount)}</span>
+                <span class="original-amount">总额 ${formatCurrency(totalAmount)} / ${item.amortization_months}${unitLabel}</span>
+                <span class="amortization-indicator">第 ${item.amortization_index + 1} / ${item.amortization_months} 期</span>
+            </div>
+        `;
     }
 
-    container.style.display = 'flex';
-
-    // Calculate total expenses for the month
-    const monthExpenses = getExpensesForMonth(year, month);
-    // Reuse existing aggregation logic
-    const { expenseTotal } = aggregateByCategory(monthExpenses);
-
-    const percent = Math.min((expenseTotal / monthBudget) * 100, 100);
-    const isOver = expenseTotal > monthBudget;
-    const color = isOver ? '#EF4444' : '#10B981';
-
-    const fill = document.getElementById('total-budget-fill');
-    fill.style.width = `${percent}%`;
-    fill.style.backgroundColor = color;
-
-    const text = document.getElementById('total-budget-text');
-    text.textContent = `¥${expenseTotal.toFixed(0)} / ¥${monthBudget.toFixed(0)} (${percent.toFixed(0)}%)`;
-    text.style.color = color;
+    return `
+        <div class="expense-card ${isIncome ? "income-card" : ""}">
+            <div class="card-top">
+                <span class="card-desc">${item.description}</span>
+                ${amountHtml}
+            </div>
+            <div class="card-footer">
+                <div class="card-tags">
+                    <span class="tag">${categoryIcon} ${item.category}</span>
+                    ${item.is_amortized ? '<span class="tag amortized">分期</span>' : ""}
+                    ${isIncome ? '<span class="tag income-tag">收入</span>' : ""}
+                </div>
+                <div class="card-actions-compact">
+                    <button class="btn-icon" title="编辑" onclick="event.stopPropagation(); editExpense(${item.id})">✎</button>
+                    <button class="btn-icon delete" title="删除" onclick="event.stopPropagation(); deleteExpenseWrapper(${item.id}, ${item.is_amortized}, '${item.group_id || ""}')">🗑</button>
+                </div>
+            </div>
+        </div>
+    `;
 }
+
 
 function renderMonthlyBoard(centerDate) {
-    const board = document.getElementById('board');
-    board.innerHTML = '';
+    const board = document.getElementById("board");
+    board.innerHTML = "";
 
-    // Show 12 months centered around centerDate
     const centerYear = centerDate.getFullYear();
-    const centerMonth = centerDate.getMonth() + 1; // 1-indexed
-
-    // Calculate start month (6 months before center)
+    const centerMonth = centerDate.getMonth() + 1;
     let startYear = centerYear;
     let startMonth = centerMonth - 5;
-
     if (startMonth <= 0) {
-        startYear--;
+        startYear -= 1;
         startMonth += 12;
     }
 
-    // Generate 12 month columns
-    for (let i = 0; i < 12; i++) {
+    for (let index = 0; index < 12; index += 1) {
         let year = startYear;
-        let month = startMonth + i;
-
+        let month = startMonth + index;
         if (month > 12) {
-            year++;
+            year += 1;
             month -= 12;
         }
 
         const monthExpenses = getExpensesForMonth(year, month);
         const { categoryTotals, expenseTotal, incomeTotal, netTotal } = aggregateByCategory(monthExpenses);
-
-        const col = document.createElement('div');
-        col.className = 'month-column';
-
-        // Check if this is the current month
+        const monthName = new Date(year, month - 1, 1).toLocaleDateString("zh-CN", { month: "long" });
         const today = new Date();
+
+        const column = document.createElement("div");
+        column.className = "month-column";
         if (year === today.getFullYear() && month === today.getMonth() + 1) {
-            col.classList.add('current-day-col');
+            column.classList.add("current-day-col");
         }
 
-        const monthName = new Date(year, month - 1, 1).toLocaleDateString('zh-CN', { month: 'long' });
-
-        // Build category breakdown HTML
-        let categoryHtml = '';
-        const sortedCategories = Object.entries(categoryTotals).sort((a, b) => {
-            const totalA = a[1].expense + a[1].income;
-            const totalB = b[1].expense + b[1].income;
-            return totalB - totalA;
+        const categoryEntries = Object.entries(categoryTotals).sort((left, right) => {
+            const leftTotal = left[1].expense + left[1].income;
+            const rightTotal = right[1].expense + right[1].income;
+            return rightTotal - leftTotal;
         });
 
-        if (sortedCategories.length > 0) {
-            categoryHtml = sortedCategories.map(([category, amounts]) => {
-                const total = amounts.expense + amounts.income;
-                return `
+        const categoryHtml = categoryEntries.length > 0
+            ? categoryEntries.map(([category, totals]) => `
                 <div class="category-item">
-                    <span class="category-name">${categoryIcons[category] || '📝'} ${category}</span>
+                    <span class="category-name">${categoryIcons[category] || "📦"} ${category}</span>
                     <div class="category-amounts">
-                        ${amounts.income > 0 ? `<span class="income-amount">+¥${amounts.income.toFixed(2)}</span>` : ''}
-                        ${amounts.expense > 0 ? `<span class="expense-amount">-¥${amounts.expense.toFixed(2)}</span>` : ''}
+                        ${totals.income > 0 ? `<span class="income-amount">+${formatCurrency(totals.income)}</span>` : ""}
+                        ${totals.expense > 0 ? `<span class="expense-amount">-${formatCurrency(totals.expense)}</span>` : ""}
                     </div>
                 </div>
-            `;
-            }).join('');
-        } else {
-            categoryHtml = '<div class="category-item" style="border:none; justify-content:center; color:var(--text-secondary);">无交易</div>';
-        }
+            `).join("")
+            : '<div class="category-item empty-column-tip">暂无记录</div>';
 
-        col.innerHTML = `
+        column.innerHTML = `
             <div class="column-header">
                 <div class="date-text">${monthName}</div>
                 <div class="day-text">${year}</div>
             </div>
             <div class="month-summary">
                 <div class="month-breakdown">
-                    ${incomeTotal > 0 ? `<div class="income-total">+¥${incomeTotal.toFixed(2)}</div>` : ''}
-                    ${expenseTotal > 0 ? `<div class="expense-total">-¥${expenseTotal.toFixed(2)}</div>` : ''}
+                    ${incomeTotal > 0 ? `<div class="income-total">+${formatCurrency(incomeTotal)}</div>` : ""}
+                    ${expenseTotal > 0 ? `<div class="expense-total">-${formatCurrency(expenseTotal)}</div>` : ""}
                 </div>
-                <div class="month-total ${netTotal >= 0 ? 'positive' : 'negative'}">¥${netTotal.toFixed(2)}</div>
-                <div class="month-label">净总额</div>
+                <div class="month-total ${netTotal >= 0 ? "positive" : "negative"}">${formatCurrency(netTotal)}</div>
+                <div class="month-label">净结余</div>
             </div>
-            <div class="category-breakdown">
-                ${categoryHtml}
-            </div>
+            <div class="category-breakdown">${categoryHtml}</div>
         `;
 
-        board.appendChild(col);
+        board.appendChild(column);
     }
 }
 
+
 function renderCalendarView(centerDate) {
-    const board = document.getElementById('board');
-    board.innerHTML = '';
+    const board = document.getElementById("board");
+    board.innerHTML = "";
 
     const year = centerDate.getFullYear();
-    const month = centerDate.getMonth(); // 0-indexed
-
-    // Create calendar container
-    const calendarContainer = document.createElement('div');
-    calendarContainer.className = 'calendar-view';
-
-    // Calendar header
-    const monthName = new Date(year, month, 1).toLocaleDateString('zh-CN', { month: 'long', year: 'numeric' });
-    const header = document.createElement('div');
-    header.className = 'calendar-header';
-    header.innerHTML = `<h2>${monthName}</h2>`;
-    calendarContainer.appendChild(header);
-
-    // Weekday headers
-    const weekdayHeaders = document.createElement('div');
-    weekdayHeaders.className = 'calendar-weekdays';
-    const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
-    weekdays.forEach(day => {
-        const dayHeader = document.createElement('div');
-        dayHeader.className = 'weekday-header';
-        dayHeader.textContent = day;
-        weekdayHeaders.appendChild(dayHeader);
-    });
-    calendarContainer.appendChild(weekdayHeaders);
-
-    // Calendar grid
-    const calendarGrid = document.createElement('div');
-    calendarGrid.className = 'calendar-grid';
-
-    // Get first day of month and total days
+    const month = centerDate.getMonth();
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-    // Add empty cells for days before month starts
-    for (let i = 0; i < firstDay; i++) {
-        const emptyCell = document.createElement('div');
-        emptyCell.className = 'calendar-day empty';
-        calendarGrid.appendChild(emptyCell);
+    const calendarContainer = document.createElement("div");
+    calendarContainer.className = "calendar-view";
+    calendarContainer.innerHTML = `
+        <div class="calendar-header">
+            <h2>${new Date(year, month, 1).toLocaleDateString("zh-CN", { year: "numeric", month: "long" })}</h2>
+        </div>
+        <div class="calendar-weekdays">
+            <div class="weekday-header">日</div>
+            <div class="weekday-header">一</div>
+            <div class="weekday-header">二</div>
+            <div class="weekday-header">三</div>
+            <div class="weekday-header">四</div>
+            <div class="weekday-header">五</div>
+            <div class="weekday-header">六</div>
+        </div>
+        <div class="calendar-grid" id="calendar-grid"></div>
+    `;
+
+    const grid = calendarContainer.querySelector("#calendar-grid");
+    for (let index = 0; index < firstDay; index += 1) {
+        const empty = document.createElement("div");
+        empty.className = "calendar-day empty";
+        grid.appendChild(empty);
     }
 
-    // Add cells for each day of the month
-    for (let day = 1; day <= daysInMonth; day++) {
+    for (let day = 1; day <= daysInMonth; day += 1) {
         const dateObj = new Date(year, month, day);
         const dateStr = formatDate(dateObj);
         const dayExpenses = getExpensesForDate(dateStr);
+        const { expenseTotal, incomeTotal, netTotal } = aggregateByCategory(dayExpenses);
 
-        // Calculate totals
-        let expenseTotal = 0;
-        let incomeTotal = 0;
-        dayExpenses.forEach(item => {
-            const type = (item.type || '').toLowerCase();
-            if (type === 'income') {
-                incomeTotal += Math.abs(item.amount);
-            } else {
-                expenseTotal += Math.abs(item.amount);
-            }
-        });
-
-        const netTotal = incomeTotal - expenseTotal;
-        const netTotalAbs = Math.abs(netTotal);
-        // Format string with negative sign before currency symbol
-        const netTotalStr = netTotal >= 0 ? `¥${netTotal.toFixed(2)}` : `-¥${netTotalAbs.toFixed(2)}`;
-
-        const dayCell = document.createElement('div');
-        dayCell.className = 'calendar-day';
-
-        // Highlight today
-        const today = new Date();
-        if (dateStr === formatDate(today)) {
-            dayCell.classList.add('today');
+        const cell = document.createElement("div");
+        cell.className = "calendar-day";
+        if (dateStr === getTodayString()) {
+            cell.classList.add("today");
         }
 
-        dayCell.innerHTML = `
+        cell.innerHTML = `
             <div class="day-number">${day}</div>
             ${dayExpenses.length > 0 ? `
                 <div class="day-summary">
-                    ${incomeTotal > 0 ? `<div class="income-total">+¥${incomeTotal.toFixed(2)}</div>` : ''}
-                    ${expenseTotal > 0 ? `<div class="expense-total">-¥${expenseTotal.toFixed(2)}</div>` : ''}
-                    <div class="net-total ${netTotal >= 0 ? 'positive' : 'negative'}">${netTotalStr}</div>
+                    ${incomeTotal > 0 ? `<div class="income-total">+${formatCurrency(incomeTotal)}</div>` : ""}
+                    ${expenseTotal > 0 ? `<div class="expense-total">-${formatCurrency(expenseTotal)}</div>` : ""}
+                    <div class="net-total ${netTotal >= 0 ? "positive" : "negative"}">${formatCurrency(netTotal)}</div>
                 </div>
             ` : '<div class="day-empty">-</div>'}
         `;
 
-        dayCell.onclick = () => openDayDetail(dateStr);
-        calendarGrid.appendChild(dayCell);
+        cell.onclick = () => openModal(dateStr);
+        grid.appendChild(cell);
     }
 
-    calendarContainer.appendChild(calendarGrid);
     board.appendChild(calendarContainer);
 }
 
-function openDayDetail(dateStr) {
-    // For now, just open the add modal for that date
-    // In the future, could show a detailed view of all transactions
-    openModal(dateStr);
-}
 
+function renderInsights() {
+    const container = document.getElementById("insight-strip");
+    const range = getRangeContext();
+    const rangeExpenses = getRangeExpenses(range.start, range.end);
+    const { categoryTotals, expenseTotal, incomeTotal, netTotal } = aggregateByCategory(rangeExpenses);
+    const days = Math.max(1, Math.round((range.end - range.start) / (24 * 60 * 60 * 1000)) + 1);
+    const averageExpense = expenseTotal / days;
 
+    const topCategoryEntry = Object.entries(categoryTotals)
+        .sort((left, right) => right[1].expense - left[1].expense)[0];
+    const topCategoryText = topCategoryEntry
+        ? `${topCategoryEntry[0]} · ${formatCurrency(topCategoryEntry[1].expense)}`
+        : "暂无数据";
 
-function setupEventListeners() {
-    // View toggle listeners
-    document.getElementById('daily-view-btn').onclick = () => {
-        currentView = 'daily';
-        document.getElementById('daily-view-btn').classList.add('active');
-        document.getElementById('monthly-view-btn').classList.remove('active');
-        document.getElementById('calendar-view-btn').classList.remove('active');
-        document.getElementById('budget-widget').style.display = 'flex'; // Show budget
-        renderBoard(currentDate);
-    };
+    const biggestExpense = rangeExpenses
+        .filter((item) => (item.type || "expense") !== "income")
+        .sort((left, right) => Math.abs(right.amount) - Math.abs(left.amount))[0];
 
-    document.getElementById('monthly-view-btn').onclick = () => {
-        currentView = 'monthly';
-        document.getElementById('monthly-view-btn').classList.add('active');
-        document.getElementById('daily-view-btn').classList.remove('active');
-        document.getElementById('calendar-view-btn').classList.remove('active');
-        document.getElementById('budget-widget').style.display = 'none'; // Hide budget
-        renderMonthlyBoard(currentDate);
-    };
-
-    document.getElementById('calendar-view-btn').onclick = () => {
-        currentView = 'calendar';
-        document.getElementById('calendar-view-btn').classList.add('active');
-        document.getElementById('daily-view-btn').classList.remove('active');
-        document.getElementById('monthly-view-btn').classList.remove('active');
-        document.getElementById('budget-widget').style.display = 'none'; // Hide budget
-        renderCalendarView(currentDate);
-    };
-
-    // Navigation - dynamic based on view
-    document.getElementById('prev-days').onclick = () => {
-        if (currentView === 'daily') {
-            currentDate.setDate(currentDate.getDate() - 7);
-            fetchBudget(currentDate).then(() => renderBoard(currentDate)); // Fetch budget for potentially new month
-        } else if (currentView === 'monthly') {
-            currentDate.setMonth(currentDate.getMonth() - 12);
-            renderMonthlyBoard(currentDate);
-        } else {
-            // Calendar view - go back 1 month
-            currentDate.setMonth(currentDate.getMonth() - 1);
-            renderCalendarView(currentDate);
-        }
-    };
-
-    document.getElementById('next-days').onclick = () => {
-        if (currentView === 'daily') {
-            currentDate.setDate(currentDate.getDate() + 7);
-            fetchBudget(currentDate).then(() => renderBoard(currentDate));
-        } else if (currentView === 'monthly') {
-            currentDate.setMonth(currentDate.getMonth() + 12);
-            renderMonthlyBoard(currentDate);
-        } else {
-            // Calendar view - go forward 1 month
-            currentDate.setMonth(currentDate.getMonth() + 1);
-            renderCalendarView(currentDate);
-        }
-    };
-
-    document.getElementById('today-btn').onclick = () => {
-        currentDate = new Date();
-        if (currentView === 'daily') {
-            fetchBudget(currentDate).then(() => renderBoard(currentDate));
-        } else if (currentView === 'monthly') {
-            renderMonthlyBoard(currentDate);
-        } else {
-            renderCalendarView(currentDate);
-        }
-    };
-
-
-
-    // Modal
-    const modal = document.getElementById('item-modal');
-    const form = document.getElementById('item-form');
-
-    document.getElementById('cancel-btn').onclick = () => modal.classList.add('hidden');
-
-    // Category Modal Listeners
-    const catModal = document.getElementById('category-modal');
-    const catForm = document.getElementById('category-form');
-
-    document.getElementById('close-cat-btn').onclick = () => {
-        catModal.classList.add('hidden');
-        // Reset category selection
-        const select = document.getElementById('category');
-        if (categoriesList.length > 0) {
-            // Check if current value exists
-            if (!categoriesList.find(c => c.name === select.value)) {
-                select.value = categoriesList[0].name;
-            }
-        }
-    };
-
-    catForm.onsubmit = async (e) => {
-        e.preventDefault();
-        const name = document.getElementById('new-cat-name').value;
-        const icon = document.getElementById('new-cat-icon').value;
-
-        if (!name || !icon) return;
-
-        try {
-            const res = await fetch(`${API_URL}/categories`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, icon })
-            });
-
-            if (!res.ok) {
-                const err = await res.json();
-                alert(err.detail || '创建分类失败');
-                return;
-            }
-
-            await fetchCategories(); // Refresh list
-            renderCategoriesList(); // Refresh modal list
-
-            // Set selection to new category
-            const select = document.getElementById('category');
-            select.value = name;
-
-            // Clear inputs
-            document.getElementById('new-cat-name').value = '';
-            document.getElementById('new-cat-icon').value = '';
-
-        } catch (err) {
-            console.error(err);
-            alert('创建分类错误');
-        }
-    };
-
-    form.onsubmit = async (e) => {
-        e.preventDefault();
-        const data = {
-            description: document.getElementById('desc').value,
-            amount: parseFloat(document.getElementById('amount').value),
-            category: document.getElementById('category').value,
-            amortization_months: parseInt(document.getElementById('months').value),
-            date: document.getElementById('entry-date').value,
-            type: document.getElementById('type').value,
-            unit: document.getElementById('unit').value,
-            skip_weekends: document.getElementById('skip-weekends').checked
-        };
-
-        await createExpense(data);
-        modal.classList.add('hidden');
-        await fetchExpenses();
-        if (currentView === 'daily') {
-            renderBoard(currentDate);
-        } else if (currentView === 'monthly') {
-            renderMonthlyBoard(currentDate);
-        } else {
-            renderCalendarView(currentDate);
-        }
-    };
-
-    // Developer Mode Listeners
-    document.getElementById('dev-mode-btn').onclick = openDevMode;
-    document.getElementById('close-dev-btn').onclick = () => document.getElementById('dev-modal').classList.add('hidden');
-    document.getElementById('cancel-dev-btn').onclick = () => document.getElementById('dev-modal').classList.add('hidden');
-    document.getElementById('save-dev-btn').onclick = saveDevMode;
-
-    // Import Modal Listeners
-    document.getElementById('import-btn-nav').onclick = openImportModal;
-    document.getElementById('close-import-btn').onclick = () => document.getElementById('import-modal').classList.add('hidden');
-
-    document.getElementById('rule-form').onsubmit = async (e) => {
-        e.preventDefault();
-        const keyword = document.getElementById('rule-keyword').value;
-        const category = document.getElementById('rule-category').value;
-        await createRule(keyword, category);
-    };
-
-    document.getElementById('upload-btn').onclick = uploadImportFile;
-
-    // Theme Toggle
-    const themeBtn = document.getElementById('theme-toggle-btn');
-    if (themeBtn) themeBtn.onclick = toggleTheme;
-}
-
-
-// ... existing code ...
-
-async function openImportModal() {
-    document.getElementById('import-modal').classList.remove('hidden');
-    document.getElementById('import-status').textContent = '';
-    fetchRules();
-    renderRuleSelect();
-}
-
-function renderRuleSelect() {
-    const select = document.getElementById('rule-category');
-    select.innerHTML = '';
-    // Use existing categoriesList global
-    categoriesList.forEach(cat => {
-        const opt = document.createElement('option');
-        opt.value = cat.name;
-        opt.textContent = `${cat.icon} ${cat.name}`;
-        select.appendChild(opt);
-    });
-}
-
-async function fetchRules() {
-    try {
-        const res = await fetch(`${API_URL}/rules`);
-        if (!res.ok) return;
-        const rules = await res.json();
-        renderRules(rules);
-    } catch (e) {
-        console.error(e);
+    let budgetDeltaText = "未设置预算";
+    if (monthBudget > 0) {
+        const monthExpenseTotal = aggregateByCategory(getExpensesForMonth(currentDate.getFullYear(), currentDate.getMonth() + 1)).expenseTotal;
+        const delta = monthBudget - monthExpenseTotal;
+        budgetDeltaText = delta >= 0
+            ? `结余 ${formatCurrency(delta, 0)}`
+            : `超支 ${formatCurrency(Math.abs(delta), 0)}`;
     }
+
+    const cards = [
+        { label: range.label, value: `${range.start.toLocaleDateString("zh-CN")} - ${range.end.toLocaleDateString("zh-CN")}` },
+        { label: "净流入", value: formatCurrency(netTotal) },
+        { label: "支出 / 收入", value: `${formatCurrency(expenseTotal)} / ${formatCurrency(incomeTotal)}` },
+        { label: "日均支出", value: formatCurrency(averageExpense) },
+        { label: "支出最高分类", value: topCategoryText },
+        { label: "预算状态", value: budgetDeltaText },
+        {
+            label: "最大单笔支出",
+            value: biggestExpense ? `${biggestExpense.description} · ${formatCurrency(Math.abs(biggestExpense.amount))}` : "暂无数据",
+        },
+    ];
+
+    container.innerHTML = cards.map((card) => `
+        <div class="insight-card">
+            <div class="insight-label">${card.label}</div>
+            <div class="insight-value">${card.value}</div>
+        </div>
+    `).join("");
 }
 
-function renderRules(rules) {
-    const list = document.getElementById('rules-list');
-    list.innerHTML = '';
-    rules.forEach(rule => {
-        const item = document.createElement('div');
-        item.className = 'rule-item';
-        item.innerHTML = `
-            <div>
-                <span class="rule-keyword">${rule.keyword}</span>
-                <span class="rule-cat-tag">${rule.category}</span>
-            </div>
-            <span class="rule-delete" onclick="deleteRule(${rule.id})">✕</span>
-        `;
-        list.appendChild(item);
-    });
-}
 
-async function createRule(keyword, category) {
-    try {
-        const res = await fetch(`${API_URL}/rules`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ keyword, category })
+function renderInstallmentDashboard() {
+    const container = document.getElementById("installment-rail");
+    const groups = {};
+    const referenceDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+
+    expenses
+        .filter((item) => item.is_amortized && item.group_id)
+        .forEach((item) => {
+            if (!groups[item.group_id]) {
+                groups[item.group_id] = [];
+            }
+            groups[item.group_id].push(item);
         });
-        if (!res.ok) {
-            const err = await res.json();
-            alert(err.detail);
-            return;
-        }
-        // Clear inputs
-        document.getElementById('rule-keyword').value = '';
-        document.getElementById('rule-category').value = '';
-        fetchRules();
-    } catch (e) {
-        console.error(e);
-    }
-}
 
-async function deleteRule(id) {
-    if (!confirm('删除规则？')) return;
-    await fetch(`${API_URL}/rules/${id}`, { method: 'DELETE' });
-    fetchRules();
-}
+    const cards = Object.values(groups)
+        .map((items) => items.sort((left, right) => left.amortization_index - right.amortization_index))
+        .map((items) => {
+            const first = items[0];
+            const totalPeriods = first.amortization_months || items.length;
+            const originalAmount = Math.abs(Number(first.original_amount || items.reduce((sum, item) => sum + item.amount, 0)));
+            const completedPeriods = items.filter((item) => parseDateValue(item.date) <= referenceDate).length;
+            const remainingPeriods = Math.max(totalPeriods - completedPeriods, 0);
+            const nextItem = items.find((item) => parseDateValue(item.date) > referenceDate);
+            return {
+                description: first.description,
+                category: first.category,
+                totalPeriods,
+                originalAmount,
+                completedPeriods,
+                remainingPeriods,
+                nextDate: nextItem ? nextItem.date : null,
+                unit: first.unit === "days" ? "天" : "月",
+            };
+        })
+        .filter((item) => item.remainingPeriods > 0)
+        .sort((left, right) => left.remainingPeriods - right.remainingPeriods)
+        .slice(0, 8);
 
-async function uploadImportFile() {
-    const source = document.getElementById('import-source').value;
-    const input = document.getElementById('import-file');
-    const file = input.files[0];
-    const status = document.getElementById('import-status');
-
-    if (!file) {
-        status.textContent = '请先选择文件。';
-        status.style.color = '#EF4444';
+    if (cards.length === 0) {
+        container.innerHTML = '<div class="empty-state">当前没有进行中的分期记录</div>';
         return;
     }
 
-    status.textContent = '正在上传处理...';
-    status.style.color = '#FBBF24';
+    container.innerHTML = cards.map((card) => `
+        <div class="installment-card">
+            <div class="installment-title">${card.description}</div>
+            <div class="installment-meta">${categoryIcons[card.category] || "📦"} ${card.category}</div>
+            <div class="installment-progress">
+                <div class="installment-progress-fill" style="width:${(card.completedPeriods / card.totalPeriods) * 100}%;"></div>
+            </div>
+            <div class="installment-stats">
+                <span>总额 ${formatCurrency(card.originalAmount)}</span>
+                <span>${card.completedPeriods}/${card.totalPeriods} ${card.unit}</span>
+            </div>
+            <div class="installment-stats">
+                <span>剩余 ${card.remainingPeriods} ${card.unit}</span>
+                <span>${card.nextDate ? `下次 ${card.nextDate}` : "已到最后一期"}</span>
+            </div>
+        </div>
+    `).join("");
+}
 
-    const formData = new FormData();
-    formData.append('file', file);
 
-    const endpoint = source === 'wechat' ? '/import/wechat' : '/import/alipay';
+async function renderCurrentView() {
+    if (currentView === "daily") {
+        await fetchBudget(currentDate);
+        renderBoard(currentDate);
+    } else if (currentView === "monthly") {
+        document.getElementById("budget-widget").style.display = "none";
+        renderMonthlyBoard(currentDate);
+    } else {
+        document.getElementById("budget-widget").style.display = "none";
+        renderCalendarView(currentDate);
+    }
 
-    try {
-        const res = await fetch(`${API_URL}${endpoint}`, {
-            method: 'POST',
-            body: formData
-        });
+    renderInsights();
+    renderInstallmentDashboard();
+}
 
-        if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.detail || '导入失败');
-        }
 
-        const data = await res.json();
-        status.textContent = `✅ ${data.message}`;
-        status.style.color = '#10B981';
+async function refreshAll() {
+    await Promise.all([fetchCategories(), fetchRules(), fetchExpenses()]);
+    applyFilters(false);
+    await renderCurrentView();
+}
 
-        // Refresh board
-        setTimeout(() => {
-            document.getElementById('import-modal').classList.add('hidden');
-            init();
-        }, 1500);
 
-    } catch (e) {
-        console.error(e);
-        status.textContent = `❌ 错误: ${e.message}`;
-        status.style.color = '#EF4444';
+async function createExpense(payload) {
+    const expenseId = document.getElementById("expense-id").value;
+    const method = expenseId ? "PUT" : "POST";
+    const endpoint = expenseId ? `${API_URL}/expenses/${expenseId}` : `${API_URL}/expenses`;
+    const response = await fetch(endpoint, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+        throw new Error(expenseId ? "更新失败" : "创建失败");
     }
 }
 
-async function createExpense(data) {
-    try {
-        const expenseId = document.getElementById('expense-id').value;
-
-        if (expenseId) {
-            // Edit mode - PUT request
-            const res = await fetch(`${API_URL}/expenses/${expenseId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            if (!res.ok) alert('更新错误');
-        } else {
-            // Create mode - POST request
-            const res = await fetch(`${API_URL}/expenses`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            if (!res.ok) alert('保存错误');
-        }
-    } catch (e) {
-        console.error(e);
-    }
-}
 
 async function editExpense(id) {
-    // Find the expense
-    const expense = expenses.find(e => e.id === id);
+    const expense = expenses.find((item) => item.id === id);
     if (!expense) return;
 
-    // Populate modal with expense data
-    document.getElementById('modal-title').textContent = '编辑记录';
-    document.getElementById('expense-id').value = id;
-    document.getElementById('entry-date').value = expense.date;
-    document.getElementById('desc').value = expense.description;
-
-    // For amortized expenses, show original amount
-    if (expense.is_amortized && expense.original_amount) {
-        document.getElementById('amount').value = expense.original_amount;
-        document.getElementById('months').value = expense.amortization_months;
-    } else {
-        document.getElementById('amount').value = expense.amount;
-        document.getElementById('months').value = 1;
-    }
-
-    document.getElementById('category').value = expense.category;
-
-    // Set type
-    const expenseType = expense.type || 'expense';
-    document.getElementById('type').value = expenseType;
-    selectType(expenseType);
-
-    // Show modal
-    document.getElementById('item-modal').classList.remove('hidden');
-    document.getElementById('desc').focus();
+    document.getElementById("modal-title").textContent = "编辑记录";
+    document.getElementById("expense-id").value = id;
+    document.getElementById("entry-date").value = expense.date;
+    document.getElementById("desc").value = expense.description;
+    document.getElementById("amount").value = expense.is_amortized && expense.original_amount
+        ? expense.original_amount
+        : expense.amount;
+    document.getElementById("months").value = expense.is_amortized ? expense.amortization_months : 1;
+    document.getElementById("category").value = expense.category;
+    document.getElementById("unit").value = expense.unit || "months";
+    document.getElementById("skip-weekends").checked = Boolean(expense.skip_weekends);
+    document.getElementById("type").value = expense.type || "expense";
+    selectType(expense.type || "expense");
+    toggleWeekendOption();
+    document.getElementById("item-modal").classList.remove("hidden");
 }
 
 
 async function deleteExpenseWrapper(id, isAmortized, groupId) {
     if (isAmortized && groupId) {
-        // Ask if user wants to delete series
-        const deleteSeries = confirm('这是一条分摊记录。\n点击确定删除所有相关记录。\n点击取消仅删除此条记录。');
-        const url = `${API_URL}/expenses/${id}?delete_series=${deleteSeries}`;
-        await fetch(url, { method: 'DELETE' });
+        const deleteSeries = confirm("这是一条分期记录。\n确定删除整组分期？\n点击“取消”将只删除当前这一期。");
+        await fetch(`${API_URL}/expenses/${id}?delete_series=${deleteSeries}`, { method: "DELETE" });
     } else {
-        // No confirmation for single items as requested
-        // if (!confirm('Delete this item?')) return;
-        await fetch(`${API_URL}/expenses/${id}`, { method: 'DELETE' });
+        await fetch(`${API_URL}/expenses/${id}`, { method: "DELETE" });
     }
-    init();
+
+    await refreshAll();
 }
+
 
 async function debugDeleteAll() {
-    if (!confirm('⚠️ 警告：这将删除所有支出且无法撤销。\n您确定吗？')) return;
-    try {
-        const res = await fetch(`${API_URL}/expenses`, { method: 'DELETE' });
-        const data = await res.json();
-        alert(data.message);
-        init();
-    } catch (e) {
-        console.error(e);
-        alert('删除全部失败');
-    }
+    if (!confirm("确定删除全部记录？此操作不可恢复。")) return;
+    const response = await fetch(`${API_URL}/expenses`, { method: "DELETE" });
+    const data = await response.json();
+    alert(data.message || "删除完成");
+    await refreshAll();
 }
 
-window.openModal = function (dateStr) {
-    document.getElementById('modal-title').textContent = '添加记录';
-    document.getElementById('expense-id').value = '';
-    document.getElementById('entry-date').value = dateStr;
-    document.getElementById('desc').value = '';
-    document.getElementById('amount').value = '';
-    document.getElementById('months').value = 1;
-    document.getElementById('type').value = 'expense';
-    document.getElementById('unit').value = 'months';
-    document.getElementById('skip-weekends').checked = false;
-
-    // Reset type selector UI
-    document.querySelectorAll('.type-option').forEach(opt => opt.classList.remove('active'));
-    document.querySelector('.type-option[data-type="expense"]').classList.add('active');
-
-    document.getElementById('item-modal').classList.remove('hidden');
-    document.getElementById('desc').focus();
-}
-
-window.selectType = function (type) {
-    document.getElementById('type').value = type;
-    document.querySelectorAll('.type-option').forEach(opt => opt.classList.remove('active'));
-    document.querySelector(`.type-option[data-type="${type}"]`).classList.add('active');
-}
-
-window.toggleWeekendOption = function () {
-    const unit = document.getElementById('unit').value;
-    const weekendOption = document.getElementById('weekend-option');
-    if (unit === 'days') {
-        weekendOption.style.display = 'block';
-    } else {
-        weekendOption.style.display = 'none';
-    }
-}
 
 function openAddCategoryModal() {
-    const modal = document.getElementById('category-modal');
-    const picker = document.getElementById('emoji-picker');
-    document.getElementById('new-cat-name').value = '';
-    document.getElementById('new-cat-icon').value = '';
+    const modal = document.getElementById("category-modal");
+    const picker = document.getElementById("emoji-picker");
+    picker.innerHTML = "";
+    document.getElementById("new-cat-name").value = "";
+    document.getElementById("new-cat-icon").value = "";
 
-    // Populate picker
-    picker.innerHTML = '';
-    emojiList.forEach(emoji => {
-        const btn = document.createElement('div');
-        btn.className = 'emoji-btn';
-        btn.textContent = emoji;
-        btn.onclick = () => {
-            document.getElementById('new-cat-icon').value = emoji;
+    emojiList.forEach((emoji) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "emoji-btn";
+        button.textContent = emoji;
+        button.onclick = () => {
+            document.getElementById("new-cat-icon").value = emoji;
         };
-        picker.appendChild(btn);
+        picker.appendChild(button);
     });
 
     renderCategoriesList();
-
-    modal.classList.remove('hidden');
-    document.getElementById('new-cat-name').focus();
+    modal.classList.remove("hidden");
 }
 
-function renderCategoriesList() {
-    const container = document.getElementById('categories-list-container');
-    container.innerHTML = '';
 
-    categoriesList.forEach(cat => {
-        const item = document.createElement('div');
-        item.className = 'category-list-item';
+function renderCategoriesList() {
+    const container = document.getElementById("categories-list-container");
+    container.innerHTML = "";
+
+    categoriesList.forEach((category) => {
+        const item = document.createElement("div");
+        item.className = "category-list-item";
         item.innerHTML = `
             <div class="cat-item-info">
-                <span class="cat-item-icon">${cat.icon}</span>
-                <span>${cat.name}</span>
+                <span class="cat-item-icon">${category.icon}</span>
+                <span>${category.name}</span>
             </div>
-            <button class="btn-delete-cat" onclick="deleteCategory(${cat.id}, '${cat.name}')">🗑️</button>
+            <button class="btn-delete-cat" onclick="deleteCategory(${category.id}, '${category.name.replace(/'/g, "\\'")}')">🗑</button>
         `;
         container.appendChild(item);
     });
 }
 
-window.deleteCategory = async function (id, name) {
-    if (!confirm(`删除分类 "${name}"?`)) return;
 
-    try {
-        const res = await fetch(`${API_URL}/categories/${id}`, { method: 'DELETE' });
-        if (!res.ok) {
-            alert('删除分类错误');
-            return;
-        }
-        await fetchCategories(); // Refresh global list
-        renderCategoriesList(); // Refresh modal list
-    } catch (e) {
-        console.error(e);
-        alert('删除失败');
+async function deleteCategory(id, name) {
+    if (!confirm(`删除分类“${name}”？`)) return;
+    const response = await fetch(`${API_URL}/categories/${id}`, { method: "DELETE" });
+    if (!response.ok) {
+        alert("删除分类失败");
+        return;
     }
+
+    await fetchCategories();
+    renderCategoriesList();
+    applyFilters(false);
+    await renderCurrentView();
 }
 
-async function openDevMode() {
-    // 1. Fetch latest raw data
-    try {
-        const res = await fetch(`${API_URL}/expenses`);
-        const rawData = await res.json();
 
-        // 2. Convert to JSONL string
-        // Sort by id to keep stable
-        rawData.sort((a, b) => a.id - b.id);
+async function createRule(keyword, category) {
+    const response = await fetch(`${API_URL}/rules`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keyword, category }),
+    });
 
-        const jsonl = rawData.map(item => JSON.stringify(item)).join('\n');
-
-        // 3. Set to textarea
-        const editor = document.getElementById('jsonl-editor');
-        editor.value = jsonl;
-
-        // 4. Show modal
-        document.getElementById('dev-modal').classList.remove('hidden');
-
-    } catch (e) {
-        console.error(e);
-        alert("加载开发者模式数据失败");
+    if (!response.ok) {
+        const error = await response.json();
+        alert(error.detail || "创建规则失败");
+        return;
     }
+
+    document.getElementById("rule-keyword").value = "";
+    await fetchRules();
 }
 
-async function saveDevMode() {
-    if (!confirm("⚠️ 危险：这将用编辑器内容覆盖整个数据库。\n\n无效行将被忽略，但请确保 JSON 有效。\n\n继续吗？")) return;
 
-    const editor = document.getElementById('jsonl-editor');
-    const content = editor.value;
+async function deleteRule(id) {
+    if (!confirm("删除这条规则？")) return;
+    await fetch(`${API_URL}/rules/${id}`, { method: "DELETE" });
+    await fetchRules();
+}
 
-    // Parse
-    const lines = content.split('\n');
-    const items = [];
-    let errorCount = 0;
 
-    for (const line of lines) {
-        if (!line.trim()) continue; // Skip empty lines
-        try {
-            const item = JSON.parse(line);
-            // Basic validation? Backend handles most.
-            items.push(item);
-        } catch (e) {
-            errorCount++;
-            console.error("无效 JSON 行:", line);
-        }
+function renderImportPreview(data) {
+    const summary = document.getElementById("import-preview-summary");
+    const list = document.getElementById("import-preview-list");
+    importPreviewCache = data;
+
+    summary.innerHTML = `
+        <div class="preview-pill">解析到 ${data.total_parsed} 条</div>
+        <div class="preview-pill success">可新增 ${data.new_candidates} 条</div>
+        <div class="preview-pill ${data.duplicate_candidates > 0 ? "warning" : "success"}">重复候选 ${data.duplicate_candidates} 条</div>
+    `;
+
+    list.innerHTML = data.preview_items.length > 0
+        ? data.preview_items.map((item) => `
+            <div class="preview-row ${item.duplicate ? "duplicate" : ""}">
+                <div class="preview-row-top">
+                    <strong>${item.description}</strong>
+                    <span class="${item.type === "income" ? "income-amount" : "expense-amount"}">
+                        ${item.type === "income" ? "+" : "-"}${formatCurrency(Math.abs(item.amount))}
+                    </span>
+                </div>
+                <div class="preview-row-meta">
+                    <span>${item.date}</span>
+                    <span>${item.category}</span>
+                    <span>${item.duplicate ? "疑似重复" : "将导入"}</span>
+                </div>
+                <div class="preview-row-note">${item.explanation}</div>
+            </div>
+        `).join("")
+        : '<div class="empty-state">没有可预览的数据</div>';
+}
+
+
+async function previewImportFile() {
+    const source = document.getElementById("import-source").value;
+    const file = document.getElementById("import-file").files[0];
+    if (!file) {
+        setStatus("import-status", "请先选择账单文件", "danger");
+        return;
     }
 
-    if (errorCount > 0) {
-        if (!confirm(`发现 ${errorCount} 行无效 JSON 将被跳过。\n继续处理 ${items.length} 条有效记录？`)) return;
-    }
+    setStatus("import-status", "正在生成导入预览...", "warning");
 
-    // Send to backend
+    const formData = new FormData();
+    formData.append("file", file);
+
     try {
-        const res = await fetch(`${API_URL}/expenses/bulk_replace`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(items)
+        const response = await fetch(`${API_URL}/import/${source}/preview`, {
+            method: "POST",
+            body: formData,
         });
 
-        if (!res.ok) {
-            const err = await res.json();
-            alert("保存数据错误:\n" + (err.detail ? JSON.stringify(err.detail) : res.statusText));
-            return;
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "预览失败");
         }
 
-        alert(`成功！已用 ${items.length} 条记录替换数据库。`);
-        document.getElementById('dev-modal').classList.add('hidden');
-
-        // Reload everything
-        init();
-
-    } catch (e) {
-        console.error(e);
-        alert("保存期间发生网络或服务器错误。");
+        const data = await response.json();
+        renderImportPreview(data);
+        setStatus("import-status", "预览已生成，可以检查规则命中与重复项", "success");
+    } catch (error) {
+        console.error(error);
+        setStatus("import-status", `预览失败：${error.message}`, "danger");
     }
 }
 
 
+async function uploadImportFile() {
+    const source = document.getElementById("import-source").value;
+    const file = document.getElementById("import-file").files[0];
+    if (!file) {
+        setStatus("import-status", "请先选择账单文件", "danger");
+        return;
+    }
+
+    setStatus("import-status", "正在导入账单...", "warning");
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+        const response = await fetch(`${API_URL}/import/${source}`, {
+            method: "POST",
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "导入失败");
+        }
+
+        const data = await response.json();
+        setStatus("import-status", data.message, "success");
+        await refreshAll();
+    } catch (error) {
+        console.error(error);
+        setStatus("import-status", `导入失败：${error.message}`, "danger");
+    }
+}
+
+
+async function openImportModal() {
+    document.getElementById("import-modal").classList.remove("hidden");
+    document.getElementById("import-preview-summary").innerHTML = '<div class="empty-state">尚未生成预览</div>';
+    document.getElementById("import-preview-list").innerHTML = "";
+    importPreviewCache = null;
+    setStatus("import-status", "", "neutral");
+    await fetchRules();
+}
+
+
+async function openDevMode() {
+    const response = await fetch(`${API_URL}/expenses`);
+    const rawData = await response.json();
+    rawData.sort((left, right) => left.id - right.id);
+    document.getElementById("jsonl-editor").value = rawData.map((item) => JSON.stringify(item)).join("\n");
+    document.getElementById("dev-modal").classList.remove("hidden");
+}
+
+
+async function saveDevMode() {
+    if (!confirm("保存会用编辑器内容覆盖当前全部流水，确定继续？")) return;
+
+    const content = document.getElementById("jsonl-editor").value;
+    const items = [];
+    let invalidLines = 0;
+
+    content.split("\n").forEach((line) => {
+        if (!line.trim()) return;
+        try {
+            items.push(JSON.parse(line));
+        } catch (error) {
+            invalidLines += 1;
+        }
+    });
+
+    if (invalidLines > 0 && !confirm(`有 ${invalidLines} 行不是合法 JSON，仍继续导入剩余 ${items.length} 行？`)) {
+        return;
+    }
+
+    const response = await fetch(`${API_URL}/expenses/bulk_replace`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(items),
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        alert(`保存失败：${JSON.stringify(error.detail || error)}`);
+        return;
+    }
+
+    alert(`已覆盖导入 ${items.length} 条记录`);
+    document.getElementById("dev-modal").classList.add("hidden");
+    await refreshAll();
+}
+
+
+async function downloadBackup() {
+    try {
+        setStatus("backup-status", "正在生成备份...", "warning");
+        const response = await fetch(`${API_URL}/backup/export`);
+        if (!response.ok) throw new Error("备份导出失败");
+
+        const data = await response.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `realcredit-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+        setStatus("backup-status", "备份已下载", "success");
+    } catch (error) {
+        console.error(error);
+        setStatus("backup-status", `导出失败：${error.message}`, "danger");
+    }
+}
+
+
+async function restoreBackup() {
+    const file = document.getElementById("backup-file").files[0];
+    if (!file) {
+        setStatus("backup-status", "请先选择备份文件", "danger");
+        return;
+    }
+
+    if (!confirm("恢复备份会覆盖当前所有数据，确定继续？")) return;
+
+    try {
+        setStatus("backup-status", "正在恢复备份...", "warning");
+        const text = await file.text();
+        const payload = JSON.parse(text);
+
+        const response = await fetch(`${API_URL}/backup/import`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "恢复失败");
+        }
+
+        const data = await response.json();
+        setStatus("backup-status", `${data.message}，已恢复 ${data.expenses} 条记录`, "success");
+        await refreshAll();
+    } catch (error) {
+        console.error(error);
+        setStatus("backup-status", `恢复失败：${error.message}`, "danger");
+    }
+}
+
+
+function setupEventListeners() {
+    document.getElementById("daily-view-btn").onclick = async () => {
+        currentView = "daily";
+        updateViewButtons();
+        await renderCurrentView();
+    };
+
+    document.getElementById("monthly-view-btn").onclick = async () => {
+        currentView = "monthly";
+        updateViewButtons();
+        await renderCurrentView();
+    };
+
+    document.getElementById("calendar-view-btn").onclick = async () => {
+        currentView = "calendar";
+        updateViewButtons();
+        await renderCurrentView();
+    };
+
+    document.getElementById("prev-days").onclick = async () => {
+        if (currentView === "daily") {
+            currentDate.setDate(currentDate.getDate() - 7);
+        } else if (currentView === "monthly") {
+            currentDate.setMonth(currentDate.getMonth() - 12);
+        } else {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+        }
+        await renderCurrentView();
+    };
+
+    document.getElementById("next-days").onclick = async () => {
+        if (currentView === "daily") {
+            currentDate.setDate(currentDate.getDate() + 7);
+        } else if (currentView === "monthly") {
+            currentDate.setMonth(currentDate.getMonth() + 12);
+        } else {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+        await renderCurrentView();
+    };
+
+    document.getElementById("today-btn").onclick = async () => {
+        currentDate = new Date();
+        await renderCurrentView();
+    };
+
+    document.getElementById("search-input").addEventListener("input", (event) => {
+        filters.search = normalizeText(event.target.value);
+        applyFilters();
+    });
+
+    document.getElementById("type-filter").addEventListener("change", (event) => {
+        filters.type = event.target.value;
+        applyFilters();
+    });
+
+    document.getElementById("category-filter").addEventListener("change", (event) => {
+        filters.category = event.target.value;
+        applyFilters();
+    });
+
+    document.getElementById("amortization-filter").addEventListener("change", (event) => {
+        filters.amortization = event.target.value;
+        applyFilters();
+    });
+
+    document.getElementById("clear-filters-btn").onclick = () => {
+        filters.search = "";
+        filters.type = "all";
+        filters.category = "all";
+        filters.amortization = "all";
+        document.getElementById("search-input").value = "";
+        document.getElementById("type-filter").value = "all";
+        document.getElementById("category-filter").value = "all";
+        document.getElementById("amortization-filter").value = "all";
+        applyFilters();
+    };
+
+    document.getElementById("cancel-btn").onclick = () => {
+        document.getElementById("item-modal").classList.add("hidden");
+    };
+
+    document.getElementById("item-form").onsubmit = async (event) => {
+        event.preventDefault();
+        const payload = {
+            description: document.getElementById("desc").value,
+            amount: parseFloat(document.getElementById("amount").value),
+            category: document.getElementById("category").value,
+            amortization_months: parseInt(document.getElementById("months").value, 10) || 1,
+            date: document.getElementById("entry-date").value,
+            type: document.getElementById("type").value,
+            unit: document.getElementById("unit").value,
+            skip_weekends: document.getElementById("skip-weekends").checked,
+        };
+
+        try {
+            await createExpense(payload);
+            document.getElementById("item-modal").classList.add("hidden");
+            await refreshAll();
+        } catch (error) {
+            console.error(error);
+            alert(error.message || "保存失败");
+        }
+    };
+
+    document.getElementById("close-cat-btn").onclick = () => {
+        document.getElementById("category-modal").classList.add("hidden");
+    };
+
+    document.getElementById("category-form").onsubmit = async (event) => {
+        event.preventDefault();
+        const name = document.getElementById("new-cat-name").value.trim();
+        const icon = document.getElementById("new-cat-icon").value.trim();
+        if (!name || !icon) return;
+
+        const response = await fetch(`${API_URL}/categories`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, icon }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            alert(error.detail || "创建分类失败");
+            return;
+        }
+
+        await fetchCategories();
+        renderCategoriesList();
+        document.getElementById("category").value = name;
+        document.getElementById("new-cat-name").value = "";
+        document.getElementById("new-cat-icon").value = "";
+    };
+
+    document.getElementById("rule-form").onsubmit = async (event) => {
+        event.preventDefault();
+        const keyword = document.getElementById("rule-keyword").value.trim();
+        const category = document.getElementById("rule-category").value;
+        if (!keyword || !category) return;
+        await createRule(keyword, category);
+    };
+
+    document.getElementById("import-btn-nav").onclick = openImportModal;
+    document.getElementById("close-import-btn").onclick = () => {
+        document.getElementById("import-modal").classList.add("hidden");
+    };
+    document.getElementById("preview-upload-btn").onclick = previewImportFile;
+    document.getElementById("upload-btn").onclick = uploadImportFile;
+
+    document.getElementById("backup-btn-nav").onclick = () => {
+        document.getElementById("backup-modal").classList.remove("hidden");
+        setStatus("backup-status", "", "neutral");
+    };
+    document.getElementById("close-backup-btn").onclick = () => {
+        document.getElementById("backup-modal").classList.add("hidden");
+    };
+    document.getElementById("download-backup-btn").onclick = downloadBackup;
+    document.getElementById("restore-backup-btn").onclick = restoreBackup;
+
+    document.getElementById("dev-mode-btn").onclick = openDevMode;
+    document.getElementById("close-dev-btn").onclick = () => {
+        document.getElementById("dev-modal").classList.add("hidden");
+    };
+    document.getElementById("cancel-dev-btn").onclick = () => {
+        document.getElementById("dev-modal").classList.add("hidden");
+    };
+    document.getElementById("save-dev-btn").onclick = saveDevMode;
+
+    document.getElementById("theme-toggle-btn").onclick = toggleTheme;
+}
+
+
+function updateViewButtons() {
+    document.getElementById("daily-view-btn").classList.toggle("active", currentView === "daily");
+    document.getElementById("monthly-view-btn").classList.toggle("active", currentView === "monthly");
+    document.getElementById("calendar-view-btn").classList.toggle("active", currentView === "calendar");
+}
 
 
 function toggleTheme() {
     const html = document.documentElement;
-    const current = html.getAttribute('data-theme');
-    const next = current === 'light' ? 'dark' : 'light';
-    html.setAttribute('data-theme', next);
-
-    const btn = document.getElementById('theme-toggle-btn');
-    if (btn) btn.textContent = next === 'light' ? '🌙' : '☀️';
-
-    localStorage.setItem('theme', next);
+    const current = html.getAttribute("data-theme");
+    const next = current === "light" ? "dark" : "light";
+    html.setAttribute("data-theme", next);
+    localStorage.setItem("theme", next);
+    document.getElementById("theme-toggle-btn").textContent = next === "light" ? "🌙" : "☀️";
 }
+
 
 function loadTheme() {
-    const saved = localStorage.getItem('theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', saved);
-    const btn = document.getElementById('theme-toggle-btn');
-    if (btn) btn.textContent = saved === 'light' ? '🌙' : '☀️';
+    const forcedTheme = new URLSearchParams(window.location.search).get("theme");
+    const initialTheme = forcedTheme === "light" || forcedTheme === "dark"
+        ? forcedTheme
+        : (localStorage.getItem("theme") || "dark");
+
+    document.documentElement.setAttribute("data-theme", initialTheme);
+    document.getElementById("theme-toggle-btn").textContent = initialTheme === "light" ? "🌙" : "☀️";
 }
 
-document.addEventListener('DOMContentLoaded', init);
+
+window.openModal = function openModal(dateStr) {
+    document.getElementById("modal-title").textContent = "新增记录";
+    document.getElementById("expense-id").value = "";
+    document.getElementById("entry-date").value = dateStr;
+    document.getElementById("desc").value = "";
+    document.getElementById("amount").value = "";
+    document.getElementById("months").value = 1;
+    document.getElementById("type").value = "expense";
+    document.getElementById("unit").value = "months";
+    document.getElementById("skip-weekends").checked = false;
+    selectType("expense");
+    toggleWeekendOption();
+    document.getElementById("item-modal").classList.remove("hidden");
+    document.getElementById("desc").focus();
+};
+
+
+window.selectType = function selectType(type) {
+    document.getElementById("type").value = type;
+    document.querySelectorAll(".type-option").forEach((element) => {
+        element.classList.toggle("active", element.dataset.type === type);
+    });
+};
+
+
+window.toggleWeekendOption = function toggleWeekendOption() {
+    const unit = document.getElementById("unit").value;
+    document.getElementById("weekend-option").style.display = unit === "days" ? "block" : "none";
+};
+
+
+window.deleteCategory = deleteCategory;
+window.deleteRule = deleteRule;
+window.editExpense = editExpense;
+window.deleteExpenseWrapper = deleteExpenseWrapper;
+window.updateBudget = updateBudget;
+
+
+async function init() {
+    loadTheme();
+    setupEventListeners();
+    updateViewButtons();
+
+    try {
+        await refreshAll();
+    } catch (error) {
+        console.error(error);
+        document.getElementById("board").innerHTML = `<div class="error-message">加载失败：${error.message}</div>`;
+    }
+}
+
+
+document.addEventListener("DOMContentLoaded", init);
